@@ -1,0 +1,141 @@
+?start: (proc_unit|lib_unit|test_unit)+ -> multi_prgm
+
+value: NUMBER
+    | STRING
+    | "true" -> true
+    | "false" -> false
+    | CHAR
+    // add other stuff here
+
+static_array: "{" [value [("," value)+] ] "}"
+
+keyval_pair: NAME ":" value
+?keyval_list: keyval_pair [("," keyval_pair)+]
+
+
+param: type NAME
+param_list: param [("," param)+]
+
+?argument: assignment
+?argument_list: argument [("," argument)+]
+
+proc_unit: "proc" NAME [ "(" keyval_list ")" ] unit_body
+
+lib_unit: "lib" NAME unit_body -> begin_lib
+test_unit: "test" NAME ";"
+unit_body: "{" toplevel_stmt* "}"
+
+
+?toplevel_stmt: link_stmt ";"
+    | static_allocation ";"
+    | func_def
+    | raw_c_statement
+
+link_stmt: "link" NAME [ ("," NAME)+ ] -> link
+    | "c_include" STRING -> c_include
+
+func_def: visibility? "fn" NAME "(" param_list? ")" type? func_body
+func_body: "{" statement* "}"
+func_call: lvalue "(" argument_list? ")"
+
+static_allocation: "static" type NAME [ "=" (value | static_array) ]
+stack_allocation: "stack" type NAME [ "=" (value | static_array) ]
+
+?visibility: "glob" -> global
+
+static_offset: "+" -> static_plus
+    | "-" -> static_minus
+
+lvalue: [NAME "."] NAME -> var
+    | "[" [NAME "."] NAME (static_offset (NUMBER | NAME))* "]" -> deref_var
+    | "[" func_call (static_offset (NUMBER | NAME))* "]" -> deref_func_call
+
+?assignment: logic_eq
+    | lvalue "+=" logic_eq -> plus_eq
+    | lvalue "-=" logic_eq -> minus_eq
+    | lvalue "*=" logic_eq -> mul_eq
+    | lvalue "/=" logic_eq -> div_eq
+    | lvalue "%=" logic_eq -> mod_eq
+    | lvalue "=" logic_eq -> assign
+
+?logic_eq: logic_andor
+    | logic_eq "==" logic_andor -> logic_equals
+    | logic_eq "!=" logic_andor -> logic_notequals
+
+?logic_andor: logic_cmp
+    | logic_andor "&&" logic_cmp -> logic_and
+    | logic_andor "||" logic_cmp -> logic_or
+
+?logic_cmp: sum
+    | logic_cmp ">=" sum -> logic_ge
+    | logic_cmp "<=" sum -> logic_le
+    | logic_cmp ">" sum -> logic_gt
+    | logic_cmp "<" sum -> logic_lt
+
+?sum: product
+    | sum "+" product -> add
+    | sum "-" product -> sub
+
+?product: atom
+    | product "*" atom -> mul
+    | product "/" atom -> div
+    | product "%" atom -> mod
+
+?atom: value
+    | "-" atom -> neg
+    | func_call -> func_invoke
+    | lvalue -> var
+    | atom "++" -> post_inc
+    | atom "--" -> post_dec
+    | "++" atom -> pre_inc
+    | "--" atom -> pre_dec
+    | "(" sum ")"
+
+statement: stack_allocation ";" -> stack_alloc
+    | assignment ";" -> expr
+    | if_statement -> if_stmt
+    | while_statement -> while_stmt
+    | do_while_statement -> do_while_stmt
+    | for_statement -> for_stmt
+    | return_statement -> ret
+    | raw_c_statement -> inline_c
+
+if_statement: "if" assignment "{" statement* "}" else_branch*
+else_branch: "else" if_statement -> else_if
+    | "else" "{" statement* "}"
+
+loop_flow_stmt: "break" ";" -> break
+    | "continue" ";" -> continue
+
+return_statement: "return" assignment? ";"
+
+while_statement: "while" assignment "{" (statement|loop_flow_stmt)* "}"
+do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" assignment
+for_statement: "for" "(" param* ";" assignment ";" assignment* ")" "{" (statement|loop_flow_stmt)* "}"
+raw_c_statement: "[[" "inline" "c" "]]" STRING ";"
+
+type: ".cstr" -> cstr
+    | ".i32" -> i32
+    | ".i64" -> i64
+    | ".i8"  -> i8
+    | ".i16" -> i16
+    | ".f32" -> f32
+    | ".f64" -> f64
+    | ".ptr" -> ptr
+    | ".byte_ptr" -> byte_ptr
+    | ".word_ptr" -> word_ptr
+    | ".dword_ptr" -> dword_ptr
+    | ".qword_ptr" -> qword_ptr
+
+CHAR: /'\\?.'/
+
+%import common.CNAME -> NAME
+%import common.NUMBER -> NUMBER
+%import common.WS -> WS
+%import common.CPP_COMMENT -> SLINE_COMMENT
+%import common.C_COMMENT   -> MLINE_COMMENT
+%import common.ESCAPED_STRING -> STRING
+
+%ignore WS
+%ignore SLINE_COMMENT
+%ignore MLINE_COMMENT

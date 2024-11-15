@@ -1,0 +1,87 @@
+lib stdio {
+    c_include "stdio.h";
+
+    glob fn print_str(.cstr ptr) {
+        stack .cstr fmt = "%s";
+        [[inline c]] "printf(fmt, ptr);";
+    }
+    glob fn print_i32(.i32 val) {
+        stack .cstr fmt = "%d";
+        [[inline c]] "printf(fmt, val);";
+    }
+    glob fn print_f32(.f32 val){
+        stack .cstr fmt = "%f";
+        [[inline c]] "printf(fmt, val);";
+    }
+    glob fn putch(.i8 ch) {
+        [[inline c]] "putchar(ch);";
+    }
+}
+/*
+proc Foo(entry: "main") {
+    link stdlib;
+    link stdio, stdmath;
+
+    static .cstr message0 = "Hello World\n";
+    static .cstr message1 = "Your number is: ";
+
+    glob fn main() {
+        stack .i32 root = 5;
+        stack .i32 root_squared;
+
+
+        root_squared = -square(++root * (root-- + 1));
+
+        stdio.print_str(message0);
+        stdio.print_str(message1);
+        stdio.print_i32(root_squared);
+        stdio.putch('\n');
+    }
+
+    fn square(.i32 value) .i32 {
+        stack .i32 result;
+
+        result = value * value;
+    }
+}
+*/
+/*
+proc Example(entry: main){
+    link stdio;
+
+    static .cstr format = "Hello %s\nNum: %d\n";
+    static .cstr world = "World";
+
+    glob fn main() {
+        stack .i32 value = 5;
+    }
+
+    fn square(.i32 a, .i32 b) .i32 {
+        return a * b;
+    }
+
+    fn factorial(.i32 n) .i32 {
+        stack .i32 value;
+
+        if(n <= 1){
+            return 1;
+        }
+
+        value = 1;
+
+        while(n > 1){
+            value *= n;
+            n--;
+        }
+
+        return value;
+    }
+
+}
+
+lib stdio {
+    glob fn printf(.cstr fmt, $va_args{}){
+        $ccall("printf", fmt, $va_expand{});
+    }
+}
+*/
