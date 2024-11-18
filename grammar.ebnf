@@ -34,9 +34,9 @@ unit_body: "{" toplevel_stmt* "}"
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
     | "c_include" STRING -> c_include
 
-func_def: visibility? "fn" NAME "(" param_list? ")" type? func_body
-func_body: "{" statement* "}"
-func_call: lvalue "(" argument_list? ")"
+func_def: visibility? "fn" NAME "(" param_list? ")" type? func_body -> function
+func_body: "{" statement* "}" -> function_body
+func_call: lvalue "(" argument_list? ")" -> function_call
 
 static_allocation: "static" type NAME [ "=" (value | static_array) ]
 stack_allocation: "stack" type NAME [ "=" (value | static_array) ]
