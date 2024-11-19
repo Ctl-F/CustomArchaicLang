@@ -112,7 +112,10 @@ return_statement: "return" assignment? ";"
 while_statement: "while" assignment "{" (statement|loop_flow_stmt)* "}"
 do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" assignment
 for_statement: "for" "(" param* ";" assignment ";" assignment* ")" "{" (statement|loop_flow_stmt)* "}"
-raw_c_statement: "[[" "inline" "c" "]]" STRING ";"
+
+INLINE_C_BODY: /\$c\{\{.*\}\}/
+
+raw_c_statement: INLINE_C_BODY ";" -> inline_c_statement
 
 type: ".cstr" -> cstr
     | ".i32" -> i32

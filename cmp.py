@@ -15,8 +15,18 @@ def append_all(list, *args):
         list.append(arg)
     return list
 
-def compile_function(function_node):
+def compile_inline_c(c_node):
     pass
+
+def compile_function(function_node):
+    isGlobal = False
+    first = 0
+    if function_node.children[0].data == "global":
+        first = 1
+        isGlobal = True
+    name = function_node.children[first]
+    params = []
+    
 
 def compile_cinclude(include_node):
     global source_includes

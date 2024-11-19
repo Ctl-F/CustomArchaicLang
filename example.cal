@@ -3,18 +3,18 @@ lib stdio {
 
     glob fn print_str(.cstr ptr) {
         stack .cstr fmt = "%s";
-        [[inline c]] "printf(fmt, ptr);";
+        $c{{ printf(fmt, ptr) }};
     }
     glob fn print_i32(.i32 val) {
         stack .cstr fmt = "%d";
-        [[inline c]] "printf(fmt, val);";
+        $c{{ printf(fmt, val); }};
     }
     glob fn print_f32(.f32 val){
         stack .cstr fmt = "%f";
-        [[inline c]] "printf(fmt, val);";
+        $c{{ printf(fmt, val); }};
     }
     glob fn putch(.i8 ch) {
-        [[inline c]] "putchar(ch);";
+        $c{{ putchar(ch); }};
     }
 }
 /*
