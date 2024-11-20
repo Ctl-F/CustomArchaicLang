@@ -21,12 +21,20 @@ def compile_inline_c(c_node):
 def compile_function(function_node):
     isGlobal = False
     first = 0
-    if function_node.children[0].data == "global":
+    if function_node.children[0] == "glob":
         first = 1
         isGlobal = True
     name = function_node.children[first]
     params = []
-    
+    first += 1
+    params_node = function_node.children[first]
+    print(params_node)
+    print(params_node.data)
+    for i in range(len(params_node.children)):
+        print(params_node.children[i])
+
+    pass
+
 
 def compile_cinclude(include_node):
     global source_includes

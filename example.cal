@@ -1,6 +1,10 @@
 lib stdio {
     c_include "stdio.h";
 
+    fn internal_foo() {
+        stack .cstr fmt = "%s\n";
+    }
+
     glob fn print_str(.cstr ptr) {
         stack .cstr fmt = "%s";
         $c{{ printf(fmt, ptr) }};
