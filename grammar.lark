@@ -1,4 +1,4 @@
-?start: (proc_unit|lib_unit|test_unit)+ -> multi_prgm
+?start: (proc_unit|lib_unit|test_unit)+
 
 value: NUMBER
     | STRING
@@ -13,16 +13,16 @@ keyval_pair: NAME ":" value
 ?keyval_list: keyval_pair [("," keyval_pair)+]
 
 
-param: type NAME
+param: TYPE NAME
 param_list: param [("," param)+]
 
 ?argument: assignment
 ?argument_list: argument [("," argument)+]
 
-proc_unit: "proc" NAME [ "(" keyval_list ")" ] unit_body
+proc_unit: "proc" NAME [ "(" keyval_list ")" ] unit_body -> begin_proc
 
 lib_unit: "lib" NAME unit_body -> begin_lib
-test_unit: "test" NAME ";"
+test_unit: "test" NAME ";" -> begin_test
 unit_body: "{" toplevel_stmt* "}"
 
 
@@ -34,14 +34,14 @@ unit_body: "{" toplevel_stmt* "}"
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
     | "c_include" STRING -> c_include
 
-func_def: visibility? "fn" NAME "(" param_list? ")" type? func_body -> function
+func_def: GLOBAL? "fn" NAME "(" [param_list] ")" TYPE? func_body -> function
 func_body: "{" statement* "}" -> function_body
 func_call: lvalue "(" argument_list? ")" -> function_call
 
-static_allocation: "static" type NAME [ "=" (value | static_array) ]
-stack_allocation: "stack" type NAME [ "=" (value | static_array) ]
+static_allocation: "static" TYPE NAME [ "=" (value | static_array) ]
+stack_allocation: "stack" TYPE NAME [ "=" (value | static_array) ]
 
-?visibility: "glob"
+GLOBAL: "glob"
 
 static_offset: "+" -> static_plus
     | "-" -> static_minus
@@ -91,14 +91,14 @@ lvalue: [NAME "."] NAME -> var
     | "--" atom -> pre_dec
     | "(" sum ")"
 
-statement: stack_allocation ";" -> stack_alloc
-    | assignment ";" -> expr
-    | if_statement -> if_stmt
-    | while_statement -> while_stmt
-    | do_while_statement -> do_while_stmt
-    | for_statement -> for_stmt
-    | return_statement -> ret
-    | raw_c_statement -> inline_c
+?statement: stack_allocation ";"
+    | assignment ";"
+    | if_statement
+    | while_statement
+    | do_while_statement
+    | for_statement
+    | return_statement
+    | raw_c_statement
 
 if_statement: "if" assignment "{" statement* "}" else_branch*
 else_branch: "else" if_statement -> else_if
@@ -115,20 +115,20 @@ for_statement: "for" "(" param* ";" assignment ";" assignment* ")" "{" (statemen
 
 INLINE_C_BODY: /\$c\{\{.*\}\}/
 
-raw_c_statement: INLINE_C_BODY ";" -> inline_c_statement
+raw_c_statement: INLINE_C_BODY ";"
 
-type: ".cstr" -> cstr
-    | ".i32" -> i32
-    | ".i64" -> i64
-    | ".i8"  -> i8
-    | ".i16" -> i16
-    | ".f32" -> f32
-    | ".f64" -> f64
-    | ".ptr" -> ptr
-    | ".byte_ptr" -> byte_ptr
-    | ".word_ptr" -> word_ptr
-    | ".dword_ptr" -> dword_ptr
-    | ".qword_ptr" -> qword_ptr
+TYPE: ".cstr"
+    | ".i32"
+    | ".i64"
+    | ".i8" 
+    | ".i16"
+    | ".f32"
+    | ".f64"
+    | ".ptr"
+    | ".byte_ptr"
+    | ".word_ptr"
+    | ".dword_ptr"
+    | ".qword_ptr"
 
 CHAR: /'\\?.'/
 

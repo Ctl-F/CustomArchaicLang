@@ -1,13 +1,11 @@
 lib stdio {
     c_include "stdio.h";
 
-    fn internal_foo() {
-        stack .cstr fmt = "%s\n";
-    }
-
+    
     glob fn print_str(.cstr ptr) {
         stack .cstr fmt = "%s";
-        $c{{ printf(fmt, ptr) }};
+        stack .dword_ptr foo_arr = { 1,2, 10};
+        $c{{ printf(fmt, ptr); }};
     }
     glob fn print_i32(.i32 val) {
         stack .cstr fmt = "%d";
@@ -20,6 +18,11 @@ lib stdio {
     glob fn putch(.i8 ch) {
         $c{{ putchar(ch); }};
     }
+
+    fn internal_foo() {
+        stack .cstr fmt = "%s\n";
+    }
+
 }
 /*
 proc Foo(entry: "main") {
