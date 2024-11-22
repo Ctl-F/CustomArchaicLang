@@ -4,6 +4,7 @@ value: NUMBER
     | STRING
     | "true" -> true
     | "false" -> false
+    | "null" -> null
     | CHAR
     // add other stuff here
 
@@ -36,7 +37,7 @@ link_stmt: "link" NAME [ ("," NAME)+ ] -> link
 
 func_def: GLOBAL? "fn" NAME "(" [param_list] ")" TYPE? func_body -> function
 func_body: "{" statement* "}" -> function_body
-func_call: lvalue "(" argument_list? ")" -> function_call
+func_call: lvalue "(" argument_list? ")"
 
 static_allocation: "static" TYPE NAME [ "=" (value | static_array) ]
 stack_allocation: "stack" TYPE NAME [ "=" (value | static_array) ]
@@ -46,9 +47,11 @@ GLOBAL: "glob"
 static_offset: "+" -> static_plus
     | "-" -> static_minus
 
-lvalue: [NAME "."] NAME -> var
+?lvalue: [NAME "."] NAME -> var
     | "[" [NAME "."] NAME (static_offset (NUMBER | NAME))* "]" -> deref_var
     | "[" func_call (static_offset (NUMBER | NAME))* "]" -> deref_func_call
+
+expression: assignment
 
 ?assignment: logic_eq
     | lvalue "+=" logic_eq -> plus_eq
@@ -83,16 +86,17 @@ lvalue: [NAME "."] NAME -> var
 
 ?atom: value
     | "-" atom -> neg
-    | func_call -> func_invoke
-    | lvalue -> var
+    | "!" atom -> not
+    | func_call
+    | lvalue
     | atom "++" -> post_inc
     | atom "--" -> post_dec
     | "++" atom -> pre_inc
     | "--" atom -> pre_dec
-    | "(" sum ")"
+    | "(" sum ")" -> group
 
 ?statement: stack_allocation ";"
-    | assignment ";"
+    | expression ";"
     | if_statement
     | while_statement
     | do_while_statement
@@ -100,18 +104,18 @@ lvalue: [NAME "."] NAME -> var
     | return_statement
     | raw_c_statement
 
-if_statement: "if" assignment "{" statement* "}" else_branch*
+if_statement: "if" expression "{" statement* "}" else_branch*
 else_branch: "else" if_statement -> else_if
     | "else" "{" statement* "}"
 
 loop_flow_stmt: "break" ";" -> break
     | "continue" ";" -> continue
 
-return_statement: "return" assignment? ";"
+return_statement: "return" expression? ";"
 
-while_statement: "while" assignment "{" (statement|loop_flow_stmt)* "}"
-do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" assignment
-for_statement: "for" "(" param* ";" assignment ";" assignment* ")" "{" (statement|loop_flow_stmt)* "}"
+while_statement: "while" expression "{" (statement|loop_flow_stmt)* "}"
+do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" expression
+for_statement: "for" "(" param* ";" expression ";" expression* ")" "{" (statement|loop_flow_stmt)* "}"
 
 INLINE_C_BODY: /\$c\{\{.*\}\}/
 

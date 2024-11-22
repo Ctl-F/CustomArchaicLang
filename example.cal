@@ -4,7 +4,6 @@ lib stdio {
     
     glob fn print_str(.cstr ptr) {
         stack .cstr fmt = "%s";
-        stack .dword_ptr foo_arr = { 1,2, 10};
         $c{{ printf(fmt, ptr); }};
     }
     glob fn print_i32(.i32 val) {
@@ -19,8 +18,16 @@ lib stdio {
         $c{{ putchar(ch); }};
     }
 
-    fn internal_foo() {
+    fn internal_foo(.i32 bar) {
         stack .cstr fmt = "%s\n";
+        stack .i32 test_value;
+
+        test_value = bar + 100 / (30 * magic(10));
+
+    }
+
+    fn magic(.i32 n) .i32 {
+        return n;
     }
 
 }
