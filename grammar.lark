@@ -48,8 +48,8 @@ static_offset: "+" -> static_plus
     | "-" -> static_minus
 
 ?lvalue: [NAME "."] NAME -> var
-    | "[" [NAME "."] NAME (static_offset (NUMBER | NAME))* "]" -> deref_var
-    | "[" func_call (static_offset (NUMBER | NAME))* "]" -> deref_func_call
+    | "[" [ "(" TYPE ")" ] [NAME "."] NAME (static_offset (NUMBER | NAME))* "]" -> deref_var
+    | "[" [ "(" TYPE ")" ] func_call (static_offset (NUMBER | NAME))* "]" -> deref_func_call
 
 expression: assignment
 
@@ -87,6 +87,7 @@ expression: assignment
 ?atom: value
     | "-" atom -> neg
     | "!" atom -> not
+    | "@" lvalue -> ref
     | func_call
     | lvalue
     | atom "++" -> post_inc

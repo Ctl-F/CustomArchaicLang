@@ -1,3 +1,50 @@
+proc Foo(entry: "main") {
+    link stdio;
+
+    static .cstr message0 = "Hello World\n";
+    static .cstr message1 = "Your number is: ";
+
+    glob fn main(.i32 argc, .ptr argv) .i32 {
+        stack .i32 root = 5;
+        stack .i32 root_squared;
+        stack .i32 root_cubed;
+
+        root_squared = square(root);
+        root_cubed = cube(root);
+
+        stdio.print_str(message0);
+        
+        stdio.print_str(message1);
+        stdio.print_i32(root_squared);
+
+        stdio.putch('\n');
+
+        stdio.print_str(message1);
+        stdio.print_i32(root_cubed);
+
+        stdio.putch('\n');
+
+        return 0;
+    }
+
+    fn square(.i32 value) .i32 {
+        stack .i32 result;
+
+        result = value * value;
+
+        return result;
+    }
+
+    fn cube(.i32 value) .i32 {
+        stack .i32 result;
+
+        result = value * value * value;
+
+        return result;
+    }
+}
+
+
 lib stdio {
     c_include "stdio.h";
 
@@ -17,20 +64,46 @@ lib stdio {
     glob fn putch(.i8 ch) {
         $c{{ putchar(ch); }};
     }
-
-    fn internal_foo(.i32 bar) {
-        stack .cstr fmt = "%s\n";
-        stack .i32 test_value;
-
-        test_value = bar + 100 / (30 * magic(10));
-
-    }
-
-    fn magic(.i32 n) .i32 {
-        return n;
-    }
-
 }
+
+
+
+/*
+struct point {
+    x .i32,
+    y .i32
+}
+
+fn example(){
+    stack .(point) origin;
+    stack .(point) position;
+    stack .ptr cursor;
+
+    cursor = @origin;
+
+    [ (.dword_ptr) cursor + $struct{point, x}] = 0;
+    [ (.dword_ptr) cursor + $struct{point, y}] = 0;
+
+    cursor = @position;
+
+    [ (.dword_ptr) cursor + $struct{point, x}] = 10;
+    [ (.dword_ptr) cursor + $struct{point, y}] = 100;
+}
+
+fn set_point(.ptr target_point, .i32 x, .i32 y){
+    [ (.dword_ptr) target_point + $struct{point, x}] = x;
+    [ (.dword_ptr) target_point + $struct{point, y}] = y;
+}
+
+fn add_point(.ptr dest_point, .ptr additional_point){
+    [ (.dword_ptr) dest_point + $struct{point, x}] += 
+        [ (.dword_ptr) additional_point + $struct{point, x}];
+
+    [ (.dword_ptr) dest_point + $struct{point, y}] += 
+        [ (.dword_ptr) additional_point + $struct{point, y}];
+}
+
+*/
 /*
 proc Foo(entry: "main") {
     link stdlib;

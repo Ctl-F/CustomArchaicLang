@@ -35,6 +35,7 @@ class ObjectInfo:
     target_header_body: list = field(default_factory=lambda: [])
     target_pre_declarations: list = field(default_factory=lambda: [])
     target_source_body: list = field(default_factory=lambda: [])
+    target_link_objects: list = field(default_factory=lambda: [])
 
     def get_name(self):
         match(self.target_type):
@@ -65,8 +66,11 @@ class ObjectInfo:
             name = private["name"]
             params = private["params"]
             returns = private["returns"]
+            is_global = private["is_global"]
 
-            self.write_pre_decl("static ", returns, " ", name, "(")
+            if not is_global:
+                self.write_pre_decl("static ")
+            self.write_pre_decl(returns, " ", name, "(")
 
             if len(params) == 0:
                 self.write_pre_decl("void")
@@ -77,64 +81,69 @@ class ObjectInfo:
 
                 if i+1 < len(params):
                     self.write_pre_decl(", ")
+                i += 1
 
             self.write_pre_decl(");\n")
         self.write_pre_decl("\n\n")
 
-        for export in self.target_exported_functions:
-            name = export["name"]
-            params = export["params"]
-            returns = export["returns"]
-            link = export["link"]
-            link_fn = self.get_local_func(link)
+        if self.target_type == ObjectType.Library:
+            for export in self.target_exported_functions:
+                name = export["name"]
+                params = export["params"]
+                returns = export["returns"]
+                link = export["link"]
+                link_fn = self.get_local_func(link)
 
-            self.write_header(returns, " ", name, "(")
-
-
-            if len(params) == 0:
-                self.write_header("void")
-
-            i = 0
-            for type, pname in params:
-                self.write_header(type, " ", pname)
-
-                if i+1 < len(params):
-                    self.write_header(", ")
-
-            self.write_header(");\n\n")
-
-            self.write_pre_decl(returns, " ", name, "(")
-            i = 0
-            for type, pname in params:
-                self.write_pre_decl(type, " ", pname)
-
-                if i + 1 < len(params):
-                    self.write_pre_decl(", ")
-
-            self.write_pre_decl(") {\n")
-
-            if link_fn["returns"] != "void":
-                self.write_pre_decl("    return ")
-            self.write_pre_decl("    ", link_fn["name"], "(")
-
-            i = 0
-            for type, name in params:
-                self.write_pre_decl(name)
-
-                if i + 1 < len(params):
-                    self.write_pre_decl(", ")
-
-            self.write_pre_decl(");\n")
-            self.write_pre_decl("}\n\n")
+                self.write_header(returns, " ", name, "(")
 
 
-        self.write_header("#endif\n\n")
+                if len(params) == 0:
+                    self.write_header("void")
+
+                i = 0
+                for type, pname in params:
+                    self.write_header(type, " ", pname)
+
+                    if i+1 < len(params):
+                        self.write_header(", ")
+                    i += 1
+
+                self.write_header(");\n\n")
+
+                self.write_pre_decl(returns, " ", name, "(")
+                i = 0
+                for type, pname in params:
+                    self.write_pre_decl(type, " ", pname)
+
+                    if i + 1 < len(params):
+                        self.write_pre_decl(", ")
+                    i += 1
+
+                self.write_pre_decl(") {\n")
+
+                if link_fn["returns"] != "void":
+                    self.write_pre_decl("    return ")
+                self.write_pre_decl("    ", link_fn["name"], "(")
+
+                i = 0
+                for type, name in params:
+                    self.write_pre_decl(name)
+
+                    if i + 1 < len(params):
+                        self.write_pre_decl(", ")
+                    i += 1
+
+                self.write_pre_decl(");\n")
+                self.write_pre_decl("}\n\n")
+
+
+            self.write_header("#endif\n\n")
 
         
 
-
-        with open(self.target_header_name, "w") as f:
-            f.write("".join(self.target_header_body))
+        if self.target_type == ObjectType.Library:
+            with open(self.target_header_name, "w") as f:
+                f.write("".join(self.target_header_body))
 
         with open(self.target_source_name, "w") as f:
             f.write("".join(self.target_pre_declarations))
@@ -156,7 +165,11 @@ class ObjectInfo:
         #kw_args = kwargs.items()
 
         compiler = "gcc"
-        object_name = "%s.o" % self.get_name()
+        object_name = self.get_name()
+
+        if self.target_type == ObjectType.Library:
+            object_name = "%s.o" % self.get_name()
+
         optimizations = "-g"
         target_dir = "./bin/"
         keep_source = False
@@ -186,16 +199,27 @@ class ObjectInfo:
         if not os.path.exists(target_dir):
             os.mkdir(target_dir)
 
+        links = ""
+        for link in self.target_link_objects:
+            links += "%slib%scal.o" % (target_dir, link)
+
         compile_only = "-c" if self.target_type == ObjectType.Library else ""
 
-        command = "%s %s -o %s%s %s %s" % (compiler, compile_only, target_dir, object_name, self.target_source_name, optimizations)
+        command = "%s %s -o %s%s %s %s %s" % (compiler, compile_only, target_dir, object_name, self.target_source_name, links, optimizations)
         print(command)
         os.system(command)
 
-        if not keep_source:
-            os.remove(self.target_header_name)
-            os.remove(self.target_source_name)
+        #if not keep_source and self.target_type == ObjectType.Library:
+        #    os.remove(self.target_source_name)
 
+
+
+def sort_objects(item):
+    if item.data == "begin_lib":
+        return -1
+    return 1
+    
+    
 
 """
     The compiler class will take the parsed tree
@@ -217,7 +241,8 @@ class Compiler:
         elif tree.data == "begin_test":
             self.compile_test(tree)
         elif tree.data == "start":
-            for item in tree.children:
+            ls = sorted(tree.children, key=sort_objects)
+            for item in ls:
                 self.compile(item)
 
     def compile_lib(self, lib_node):
@@ -226,6 +251,8 @@ class Compiler:
         self.current_object.update_names()
 
         obj_name = self.current_object.get_name()
+        print("Compiling library: %s" % obj_name)
+
         self.current_object.write_header("#ifndef ", obj_name, "_h\n#define ", obj_name, "_h\n")
         self.current_object.write_pre_decl("#include \"", self.current_object.target_header_name, "\"\n\n")
 
@@ -234,8 +261,26 @@ class Compiler:
         self.current_object.export()
         self.current_object.compile(**self.compilation_args)
 
+        print("done.")
+
     def compile_proc(self, proc_node):
-        pass
+        self.current_object = ObjectInfo(target_type=ObjectType.Process)
+        self.current_object.target_name = str(proc_node.children[0])
+        self.current_object.update_names()
+
+        obj_name = self.current_object.get_name()
+        print("Compiling process: %s" % obj_name)
+
+        #handle the key-value definitions in tye proc list
+
+        self.current_object.write_pre_decl("#include <stdint.h>\n#include <stdbool.h>\n\n")
+
+        self.compile_code_unit(proc_node.children[2])
+
+        self.current_object.export()
+        self.current_object.compile(**self.compilation_args)
+
+        print("done.")
 
     def compile_test(self, test_node):
         pass
@@ -250,8 +295,22 @@ class Compiler:
                     self.compile_c_include(item)
                 case "function":
                     self.compile_function(item)
+                case "static_allocation":
+                    self.compile_static_allocation(item)
+                case "link":
+                    self.compile_link(item)
                 case _:
                     print("Error compiling code unit, unexpected item %s" % item)
+
+    def compile_link(self, link_node):
+        for link in link_node.children:
+            spoof = ObjectInfo(ObjectType.Library)
+            spoof.target_name = str(link)
+            spoof.update_names()
+
+            self.current_object.target_link_objects.append(spoof.target_name)
+            self.current_object.write_pre_decl("#include \"%s\"\n" % spoof.target_header_name)
+        
 
     def compile_c_include(self, c_include):
         self.current_object.write_source("#include <", str(c_include.children[0])[1:-1], ">\n")
@@ -278,7 +337,7 @@ class Compiler:
             glob_name = "%s_%s" % (self.current_object.target_name, name)
             self.current_object.target_exported_functions.append( { "name": glob_name, "params": params, "returns": return_type, "link": name })
         
-        self.current_object.target_functions.append({ "name": name, "params": params, "returns": return_type })
+        self.current_object.target_functions.append({ "name": name, "params": params, "returns": return_type, "is_global": is_global })
 
         if not is_global:
             self.current_object.write_source("static ")
@@ -365,7 +424,6 @@ class Compiler:
                 print("Unexpected item %s" % item)
 
         self.current_object.write_source("}\n\n")
-
 
     def compile_return(self, return_node):
         self.current_object.write_source("return ")
@@ -600,7 +658,17 @@ class Compiler:
     def compile_value(self, node):
         self.current_object.write_source(str(node.children[0]))
 
+    def compile_static_allocation(self, alloc_node):
+        c_type = self.get_c_type(str(alloc_node.children[0]))
+        c_name = str(alloc_node.children[1])
 
+        self.current_object.write_source("static ", c_type, " ", c_name)
+
+        if len(alloc_node.children) > 2:
+            self.current_object.write_source(" = ")
+            self.compile_expression(alloc_node.children[2])
+
+        self.current_object.write_source(";\n");
 
     def compile_stack_alloc(self, alloc_node):
         c_type = self.get_c_type(str(alloc_node.children[0]))
@@ -649,7 +717,7 @@ def main():
 
     parser = Lark(Grammar, parser="lalr", maybe_placeholders=True)
     parsed = parser.parse(code)
-    print(parsed.pretty())
+    #print(parsed.pretty())
 
     compiler = Compiler()
     compiler.compile(parsed, keep_source=True)
@@ -657,3 +725,28 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""
+Version 1.0
+----------------------------
+TODO: Finish Expressions (reference, derefrence, dereference+func_call)
+TODO: Branching Statements (if, for, while, break, continue)
+TODO: Add Binary operators (both to the compiler + grammar)
+TODO: Add additional Macros (more refined macros) such as $sizeof $va_args $va_expand
+TODO: Structs (struct layout + $struct{name, member} macro)
+TODO: Testing framework
+TODO: Build System
+TODO: Allow raw_c_statement at top level
+TODO: Stdlib + Stdio + Math libraries
+
+Version 2.0
+-----------------------------
+TODO: Template functions (+ sizeof(type) sizeof(struct))
+TODO: Refine syntax
+TODO: Bug Fixes
+
+
+Known Bugs:
+-----------------------------
+
+"""
