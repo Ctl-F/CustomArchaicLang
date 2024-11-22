@@ -4,7 +4,16 @@ proc Foo(entry: "main") {
     static .cstr message0 = "Hello World\n";
     static .cstr message1 = "Your number is: ";
 
-    glob fn main(.i32 argc, .ptr argv) .i32 {
+
+    static .ptr_ptr strings = { 0, 0 };
+
+    fn get_strings() .ptr {
+        [strings] = @message0;
+        [strings + $sizeof{.ptr}] = @message1;
+        return strings;
+    }
+
+    glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
         stack .i32 root = 5;
         stack .i32 root_squared;
         stack .i32 root_cubed;
@@ -29,7 +38,7 @@ proc Foo(entry: "main") {
 
     fn square(.i32 value) .i32 {
         stack .i32 result;
-
+        
         result = value * value;
 
         return result;
@@ -41,6 +50,15 @@ proc Foo(entry: "main") {
         result = value * value * value;
 
         return result;
+    }
+
+    fn populate(.i32 value) .i32 {
+        stack .dword_ptr array = { 0, 0 };
+
+        [ array ] = value;
+        [ array + 1 ] = value;
+
+        return value;
     }
 }
 
@@ -86,7 +104,7 @@ fn example(){
 
     cursor = @position;
 
-    [ (.dword_ptr) cursor + $struct{point, x}] = 10;
+    [ (.dword_ptr) cursor + $struct{point, x}] = 10; // *(int*)(cursor + offsetof(struct point, x))
     [ (.dword_ptr) cursor + $struct{point, y}] = 100;
 }
 

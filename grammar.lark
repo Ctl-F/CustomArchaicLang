@@ -44,12 +44,14 @@ stack_allocation: "stack" TYPE NAME [ "=" (value | static_array) ]
 
 GLOBAL: "glob"
 
-static_offset: "+" -> static_plus
-    | "-" -> static_minus
+?macro: "$sizeof" "{" TYPE "}" -> macro_sizeof 
+
+static_offset: "+" (NUMBER | NAME | macro) -> static_plus
+    | "-" (NUMBER | NAME | macro) -> static_minus
 
 ?lvalue: [NAME "."] NAME -> var
-    | "[" [ "(" TYPE ")" ] [NAME "."] NAME (static_offset (NUMBER | NAME))* "]" -> deref_var
-    | "[" [ "(" TYPE ")" ] func_call (static_offset (NUMBER | NAME))* "]" -> deref_func_call
+    | "[" [ "(" TYPE ")" ] [NAME "."] NAME static_offset* "]" -> deref_var
+    | "[" [ "(" TYPE ")" ] func_call static_offset* "]" -> deref_func_call
 
 expression: assignment
 
@@ -84,7 +86,8 @@ expression: assignment
     | product "/" atom -> div
     | product "%" atom -> mod
 
-?atom: value
+?atom: value 
+    | macro
     | "-" atom -> neg
     | "!" atom -> not
     | "@" lvalue -> ref
@@ -134,6 +137,7 @@ TYPE: ".cstr"
     | ".word_ptr"
     | ".dword_ptr"
     | ".qword_ptr"
+    | ".ptr_ptr"
 
 CHAR: /'\\?.'/
 

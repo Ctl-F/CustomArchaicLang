@@ -389,6 +389,8 @@ class Compiler:
                 return "void"
             case "void":
                 return "void"
+            case ".ptr_ptr":
+                return "void**"
             case _:
                 print("Unknown type %s" % type)
 
@@ -501,6 +503,10 @@ class Compiler:
                 self.compile_group(expr)
             case "value":
                 self.compile_value(expr)
+            case "ref":
+                self.compile_ref(expr)
+            case "macro_sizeof":
+                self.compile_macro_sizeof(expr)
 
     def compile_plus_eq(self, node):
         self.compile_expression(node.children[0])
@@ -629,10 +635,49 @@ class Compiler:
         self.current_object.write_source(var_name)
 
     def compile_deref_var(self, node):
-        pass
+        cast = node.children[0]
+        name_ext = node.children[1]
+        name = node.children[2]
+
+        static_offsets = []
+        for i in range(3, len(node.children)):
+            static_offsets.append(node.children[i])
+
+        self.current_object.write_source("*")
+
+        if cast != None:
+            cast_type = self.get_c_type(str(cast))
+            self.current_object.write_source("(%s)" % cast_type)
+        var_name = str(name)
+
+        if name_ext != None:
+            var_name = "%s_%s" % (name_ext, var_name)
+
+        self.current_object.write_source("(")
+
+        self.current_object.write_source(var_name)
+
+        for offset in static_offsets:
+            if offset.data == "static_plus":
+                self.current_object.write_source("+")
+            elif offset.data == "static_minus":
+                self.current_object.write_source("-")
+            else:
+                print("Unexpected offset token %s" % offset.data);
+            
+            try:
+                self.compile_expression(offset.children[0])
+            except:
+                self.current_object.write_source(str(offset.children[0]))
+
+        self.current_object.write_source(")")
 
     def compile_deref_func_call(self, node):
         pass
+
+    def compile_ref(self, node):
+        self.current_object.write_source("&")
+        self.compile_expression(node.children[0])
 
     def compile_post_inc(self, node):
         self.compile_expression(node.children[0])
@@ -659,41 +704,30 @@ class Compiler:
         self.current_object.write_source(str(node.children[0]))
 
     def compile_static_allocation(self, alloc_node):
-        c_type = self.get_c_type(str(alloc_node.children[0]))
-        c_name = str(alloc_node.children[1])
-
-        self.current_object.write_source("static ", c_type, " ", c_name)
-
-        if len(alloc_node.children) > 2:
-            self.current_object.write_source(" = ")
-            self.compile_expression(alloc_node.children[2])
-
-        self.current_object.write_source(";\n");
+        self.compile_allocation(alloc_node, True)
 
     def compile_stack_alloc(self, alloc_node):
+        self.compile_allocation(alloc_node, False)
+
+    def compile_allocation(self, alloc_node, is_static):
         c_type = self.get_c_type(str(alloc_node.children[0]))
         c_name = str(alloc_node.children[1])
 
         is_ptr = c_type[-1] == '*'
 
+        static_keyword = "static " if is_static else ""
+
         if alloc_node.children[2] != None:
             value_node = alloc_node.children[2]
             
             if is_ptr and value_node.data == "static_array":
-                self.current_object.write_source(c_type[:-1], " ", c_name, "[]")
+                self.current_object.write_source(static_keyword, c_type[:-1], " ", c_name, "[]")
             else:
-                self.current_object.write_source(c_type, " ", c_name)
+                self.current_object.write_source(static_keyword, c_type, " ", c_name)
             
             self.current_object.write_source(" = ")
             if value_node.data == "static_array":
-                self.current_object.write_source("{")
-
-                for child in value_node.children:
-                    ## I Don't know if it's possible for a child in this scenario to have
-                    ## more than 1 child
-                    self.current_object.write_source(str(child.children[0]), ", ")
-
-                self.current_object.write_source("}")
+                self.compile_static_array(value_node)
             else:
                 self.current_object.write_source(str(value_node.children[0]))
         else:
@@ -701,26 +735,55 @@ class Compiler:
 
         self.current_object.write_source(";\n")
 
+    def compile_static_array(self, value_node):
+        self.current_object.write_source("{")
+
+        i = 0
+        for child in value_node.children:
+            ## I Don't know if it's possible for a child in this scenario to have
+            ## more than 1 child
+            self.current_object.write_source(str(child.children[0]))
+            if i + 1 < len(value_node.children):
+                self.current_object.write_source(", ")
+            i += 1
+
+        self.current_object.write_source("}")
+
     def compile_inline_c(self, inline_c):
         raw_c = inline_c.children[0]
         c_code = str(raw_c)[4:-2]
         self.current_object.write_source(c_code.strip(), "\n")
 
+    def compile_macro_sizeof(self, node):
+        c_type = self.get_c_type(str(node.children[0]))
+        self.current_object.write_source("sizeof(%s)" % c_type)
+
 with open("grammar.lark", "r") as f:
     Grammar = f.read()
 
+errors = 0
+def parser_error(e):
+    global errors
+
+    print("Error on line %s, col %s. Expected %s, got %s" % ( e.line, e.column, e.expected, e.token ))
+    errors += 1
+    return True
+
 def main():
-    global Grammar
+    global Grammar, errors
     code = ""
     with open("example.cal", "r") as f:
         code = f.read()
 
     parser = Lark(Grammar, parser="lalr", maybe_placeholders=True)
-    parsed = parser.parse(code)
+    parsed = parser.parse(code, on_error=parser_error)
     #print(parsed.pretty())
 
-    compiler = Compiler()
-    compiler.compile(parsed, keep_source=True)
+    if errors == 0:
+        compiler = Compiler()
+        compiler.compile(parsed, keep_source=True)
+    else:
+        print("Compilation aborted due to %s unresolved errors" % errors)
 
 
 if __name__ == "__main__":
@@ -737,14 +800,24 @@ TODO: Structs (struct layout + $struct{name, member} macro)
 TODO: Testing framework
 TODO: Build System
 TODO: Allow raw_c_statement at top level
-TODO: Stdlib + Stdio + Math libraries
+TODO: Stdlib + Stdio + String + Math libraries
+TODO: Error Unions and Handling
+TODO: Better Compiler Error Handling
 
 Version 2.0
 -----------------------------
 TODO: Template functions (+ sizeof(type) sizeof(struct))
 TODO: Refine syntax
 TODO: Bug Fixes
+TODO: Wide Pointers (better strings)
+TODO: Anonymous Functions
 
+Future Versions
+-----------------------------
+TODO: Capture Frames for Anonymous Functions (True Lambda)
+TODO: Struct "." or "->" accessor syntax
+TODO: Struct as type
+TODO: Better Type Analysis for compile time
 
 Known Bugs:
 -----------------------------
