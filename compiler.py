@@ -663,7 +663,7 @@ class Compiler:
         self.current_object.write_source(var_name)
 
     def compile_cast(self, node):
-        cast_type = self.geT_c_type(str(node))
+        cast_type = self.get_c_type(str(node))
         self.current_object.write_source("(%s)" % cast_type)
 
     def compile_deref_var(self, node):
