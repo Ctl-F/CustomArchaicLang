@@ -4,12 +4,11 @@ proc Foo(entry: "main") {
     static .cstr message0 = "Hello World\n";
     static .cstr message1 = "Your number is: ";
 
-
     static .ptr_ptr strings = { 0, 0 };
 
-    fn get_strings() .ptr {
-        [strings] = @message0;
-        [strings + $sizeof{.ptr}] = @message1;
+    fn get_strings() .ptr_ptr {
+        [strings] = message0;
+        [strings + $sizeof{.ptr}] = message1;
         return strings;
     }
 
@@ -17,10 +16,67 @@ proc Foo(entry: "main") {
         stack .i32 root = 5;
         stack .i32 root_squared;
         stack .i32 root_cubed;
+        stack .i32 i;
 
         root_squared = square(root);
         root_cubed = cube(root);
 
+        if root_squared < root_cubed {
+            stdio.putch('<');
+            root = 10;
+        }
+        else if root_squared > root_cubed {
+            stdio.putch('>');
+            root = 11;
+        }
+        else {
+            stdio.putch('=');
+            root = 12;
+        }
+        stdio.putch('\n');
+
+        //while(1){ 
+        //    stdio.putch('1');
+        //    break;
+        //}
+        //else {
+            // this will run
+        //    stdio.putch('!');
+        //}
+
+        //i = 0;
+        //while(i < 3){
+        //    stdio.putch('?');
+        //    i++;
+        //}
+        //else {
+            // this will not run
+        //    stdio.putch('X');
+        //}
+
+
+        stack .i32 j = 0;
+        for(i=0; i<100; i++){
+            
+            while(j < 10){
+                j++;
+                if(j > 5){
+                    break;
+                }
+            }
+            else {
+                break;
+            }
+        }
+        else {
+            stdio.print_f32(42.0);
+        }
+/*
+        do {
+            stdio.print_i32(0);
+        }
+        while (0);
+*/
         stdio.print_str(message0);
         
         stdio.print_str(message1);
@@ -31,6 +87,7 @@ proc Foo(entry: "main") {
         stdio.print_str(message1);
         stdio.print_i32(root_cubed);
 
+        stdio.putch('\n');
         stdio.putch('\n');
 
         return 0;

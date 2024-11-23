@@ -139,8 +139,6 @@ class ObjectInfo:
 
             self.write_header("#endif\n\n")
 
-        
-
         if self.target_type == ObjectType.Library:
             with open(self.target_header_name, "w") as f:
                 f.write("".join(self.target_header_body))
@@ -213,7 +211,6 @@ class ObjectInfo:
         #    os.remove(self.target_source_name)
 
 
-
 def sort_objects(item):
     if item.data == "begin_lib":
         return -1
@@ -230,6 +227,9 @@ class Compiler:
     def __init__(self):
         self.current_object = None
         self.compilation_args = None
+        self.for_counter = 0
+        self.while_counter = 0
+        self.break_labels = [ None ]
 
     def compile(self, tree, **kw_args):
         self.compilation_args = kw_args
@@ -246,6 +246,9 @@ class Compiler:
                 self.compile(item)
 
     def compile_lib(self, lib_node):
+        self.while_counter = 0
+        self.for_counter = 0
+
         self.current_object = ObjectInfo(target_type=ObjectType.Library)
         self.current_object.target_name = str(lib_node.children[0])
         self.current_object.update_names()
@@ -264,6 +267,9 @@ class Compiler:
         print("done.")
 
     def compile_proc(self, proc_node):
+        self.while_counter = 0
+        self.for_counter = 0
+
         self.current_object = ObjectInfo(target_type=ObjectType.Process)
         self.current_object.target_name = str(proc_node.children[0])
         self.current_object.update_names()
@@ -301,6 +307,8 @@ class Compiler:
                     self.compile_link(item)
                 case _:
                     print("Error compiling code unit, unexpected item %s" % item)
+
+            self.current_object.write_source("\n");
 
     def compile_link(self, link_node):
         for link in link_node.children:
@@ -355,7 +363,7 @@ class Compiler:
 
         self.current_object.write_source(")")
 
-        self.compile_function_body(func_node.children[cursor])
+        self.compile_code_body(func_node.children[cursor])
 
     def get_c_type(self, type):
         match type:
@@ -406,24 +414,44 @@ class Compiler:
             params.append((type, name))
         return params
 
-    def compile_function_body(self, body_node):
+    def compile_statement(self, item):
+        self.current_object.write_source("    ")
+        try:
+            match item.data:
+                case "stack_allocation":
+                    self.compile_stack_alloc(item)
+                case "raw_c_statement":
+                    self.compile_inline_c(item)
+                case "return_statement":
+                    self.compile_return(item)
+                case "expression":
+                    self.compile_expression(item)
+                    self.current_object.write_source(";\n")
+                case "if_statement":
+                    self.compile_if(item)
+                case "else_if":
+                    self.compile_else_if(item)
+                case "else":
+                    self.compile_else(item)
+                case "break":
+                    self.compile_break()
+                case "continue":
+                    self.compile_continue()
+                case "while_statement":
+                    self.compile_while(item)
+                case "do_while_statement":
+                    self.compile_do_while(item)
+                case "for_statement":
+                    self.compile_for(item)
+
+        except AttributeError:
+            print("Unexpected item %s" % item)
+
+    def compile_code_body(self, body_node):
         self.current_object.write_source("{\n")
 
         for item in body_node.children:
-            self.current_object.write_source("    ")
-            try:
-                match item.data:
-                    case "stack_allocation":
-                        self.compile_stack_alloc(item)
-                    case "raw_c_statement":
-                        self.compile_inline_c(item)
-                    case "return_statement":
-                        self.compile_return(item)
-                    case "expression":
-                        self.compile_expression(item)
-                        self.current_object.write_source(";\n")
-            except AttributeError:
-                print("Unexpected item %s" % item)
+            self.compile_statement(item)
 
         self.current_object.write_source("}\n\n")
 
@@ -634,6 +662,10 @@ class Compiler:
 
         self.current_object.write_source(var_name)
 
+    def compile_cast(self, node):
+        cast_type = self.geT_c_type(str(node))
+        self.current_object.write_source("(%s)" % cast_type)
+
     def compile_deref_var(self, node):
         cast = node.children[0]
         name_ext = node.children[1]
@@ -646,8 +678,8 @@ class Compiler:
         self.current_object.write_source("*")
 
         if cast != None:
-            cast_type = self.get_c_type(str(cast))
-            self.current_object.write_source("(%s)" % cast_type)
+            self.compile_cast(cast)
+
         var_name = str(name)
 
         if name_ext != None:
@@ -673,7 +705,36 @@ class Compiler:
         self.current_object.write_source(")")
 
     def compile_deref_func_call(self, node):
-        pass
+        cast = node.children[0]
+        func_call = node.children[1]
+
+        static_offsets = []
+        for i in range(2, len(node.children)):
+            static_offsets.append(node.children[i])
+
+        self.current_object.write_source("*")
+
+        if cast != None:
+            self.compile_cast(cast)
+        
+        self.current_object.write_source("(")
+
+        self.compile_expression(func_call)
+
+        for offset in static_offsets:
+            if offset.data == "static_plus":
+                self.current_object.write_source("+")
+            elif offset.data == "static_minus":
+                self.current_object.write_source("-")
+            else:
+                print("Unexpected offset token %s" % offset.data)
+            
+            try:
+                self.compile_expression(offset.children[0])
+            except:
+                self.current_object.write_source(str(offset.children[0]))
+        
+        self.current_object.write_source(")")
 
     def compile_ref(self, node):
         self.current_object.write_source("&")
@@ -758,6 +819,112 @@ class Compiler:
         c_type = self.get_c_type(str(node.children[0]))
         self.current_object.write_source("sizeof(%s)" % c_type)
 
+    def compile_if(self, node):
+        self.current_object.write_source("if (")
+        self.compile_expression(node.children[0])
+        self.current_object.write_source("){\n")
+
+        else_branch = None
+
+        for i in range(1, len(node.children)):
+            if node.children[i].data == "else_if" or node.children[i].data == "else":
+                else_branch = node.children[i]
+                break
+            self.compile_statement(node.children[i])
+        self.current_object.write_source("    }\n")
+        
+        if else_branch != None:
+            self.compile_statement(else_branch)
+
+    def compile_else(self, node):
+        self.current_object.write_source("else {\n")
+
+        for child in node.children:
+            self.compile_statement(child)
+
+        self.current_object.write_source("    }\n")
+
+    def compile_else_if(self, node):
+        self.current_object.write_source("else ")
+        self.compile_if(node.children[0])
+
+    def compile_while(self, node):
+        self.current_object.write_source("while (")
+        self.compile_expression(node.children[0])
+        self.current_object.write_source("){\n")
+
+        myself = self.while_counter
+        self.while_counter += 1
+
+        has_else = node.children[-1].data == "else"
+        offset = 1 if has_else else 0
+
+        if has_else:
+            self.break_labels.append("while_%s_else" % myself)
+        else:
+            self.break_labels.append(None)
+
+        for i in range(1, len(node.children) - offset):
+            self.compile_statement(node.children[i])
+
+        self.current_object.write_source("    }\n")
+        self.break_labels.pop()
+        if has_else:
+            self.current_object.write_source("    goto while_%s_end;\n" % myself)
+            self.current_object.write_source("while_%s_else:\n" % myself)
+            else_node = node.children[-1]
+            for child in else_node.children:
+                self.compile_statement(child)
+            self.current_object.write_source("while_%s_end:\n" % myself)
+
+    def compile_do_while(self, node):
+        pass
+
+    def compile_for(self, node):
+        has_else = node.children[-1].data == "else"
+        offset = 1 if has_else else 0
+
+        myself = self.for_counter
+        self.for_counter += 1
+
+        if has_else:
+            self.break_labels.append("for_%s_else" % myself)
+        else:
+            self.break_labels.append(None)
+
+        self.current_object.write_source("for(")
+        self.compile_expression(node.children[0])
+        self.current_object.write_source("; ")
+        self.compile_expression(node.children[1])
+        self.current_object.write_source("; ")
+        self.compile_expression(node.children[2])
+        self.current_object.write_source("){\n")
+
+        for i in range(1, len(node.children) - offset):
+            self.compile_statement(node.children[i])
+        
+        self.current_object.write_source("    }\n")
+        self.break_labels.pop()
+
+        if has_else:
+            self.current_object.write_source("    goto for_%s_end;\n" % myself)
+            self.current_object.write_source("for_%s_else:\n" % myself)
+            else_node = node.children[-1]
+            for child in else_node.children:
+                self.compile_statement(child)
+            self.current_object.write_source("for_%s_end:\n" % myself)
+
+    def compile_break(self):
+        if len(self.break_labels) == 0 or self.break_labels[-1] == None:
+            self.current_object.write_source("break;\n")
+        else:
+            self.current_object.write_source("goto %s;\n" % self.break_labels[-1])
+
+    def compile_continue(self):
+        self.current_object.write_source("continue;\n")
+    
+    
+
 with open("grammar.lark", "r") as f:
     Grammar = f.read()
 
@@ -792,10 +959,10 @@ if __name__ == "__main__":
 """
 Version 1.0
 ----------------------------
-TODO: Finish Expressions (reference, derefrence, dereference+func_call)
+DONE: Finish Expressions (reference, derefrence, dereference+func_call)
 TODO: Branching Statements (if, for, while, break, continue)
 TODO: Add Binary operators (both to the compiler + grammar)
-TODO: Add additional Macros (more refined macros) such as $sizeof $va_args $va_expand
+TODO: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
 TODO: Structs (struct layout + $struct{name, member} macro)
 TODO: Testing framework
 TODO: Build System
