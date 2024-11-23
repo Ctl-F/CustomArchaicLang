@@ -2,7 +2,7 @@ from lark import Lark
 import lark
 from enum import Enum
 from dataclasses import dataclass, field
-import os
+import os, sys
 
 class ObjectType(Enum):
     Undefined = 0
@@ -955,7 +955,12 @@ def parser_error(e):
 def main():
     global Grammar, errors
     code = ""
-    with open("example.cal", "r") as f:
+
+    file = "example.cal"
+    if len(sys.argv) > 1:
+        file = sys.argv[1]
+
+    with open(file, "r") as f:
         code = f.read()
 
     parser = Lark(Grammar, parser="lalr", maybe_placeholders=True)
