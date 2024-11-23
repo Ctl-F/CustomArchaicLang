@@ -1,121 +1,38 @@
 proc Foo(entry: "main") {
     link stdio;
 
-    static .cstr message0 = "Hello World\n";
-    static .cstr message1 = "Your number is: ";
-
-    static .ptr_ptr strings = { 0, 0 };
-
-    fn get_strings() .ptr_ptr {
-        [strings] = message0;
-        [strings + $sizeof{.ptr}] = message1;
-        return strings;
-    }
+    static .cstr hello_message = "Hello World\n";
 
     glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
-        stack .i32 root = 5;
-        stack .i32 root_squared;
-        stack .i32 root_cubed;
-        stack .i32 i;
+        stdio.print_str(hello_message);
 
-        root_squared = square(root);
-        root_cubed = cube(root);
+        stack .dword_ptr buffer = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        stack .i32 size = 10;
+        stack .i32 index = 0;
 
-        if root_squared < root_cubed {
-            stdio.putch('<');
-            root = 10;
-        }
-        else if root_squared > root_cubed {
-            stdio.putch('>');
-            root = 11;
-        }
-        else {
-            stdio.putch('=');
-            root = 12;
-        }
-        stdio.putch('\n');
+        populate_fib(buffer+1, size-1, 0, 1);
 
-        //while(1){ 
-        //    stdio.putch('1');
-        //    break;
-        //}
-        //else {
-            // this will run
-        //    stdio.putch('!');
-        //}
+        for(index = 0; index<size; index++){
+            stdio.print_i32( [ buffer + index ] );
 
-        //i = 0;
-        //while(i < 3){
-        //    stdio.putch('?');
-        //    i++;
-        //}
-        //else {
-            // this will not run
-        //    stdio.putch('X');
-        //}
-
-
-        stack .i32 j = 0;
-        for(i=0; i<100; i++){
-            
-            while(j < 10){
-                j++;
-                if(j > 5){
-                    break;
-                }
+            if(index + 1 < size){
+                stdio.putch(',');
+                stdio.putch(' ');
             }
-            else {
-                break;
-            }
-        }
-        else {
-            stdio.print_f32(42.0);
-        }
-/*
-        do {
-            stdio.print_i32(0);
-        }
-        while (0);
-*/
-        stdio.print_str(message0);
-        
-        stdio.print_str(message1);
-        stdio.print_i32(root_squared);
-
-        stdio.putch('\n');
-
-        stdio.print_str(message1);
-        stdio.print_i32(root_cubed);
-
-        stdio.putch('\n');
+        }    
         stdio.putch('\n');
 
         return 0;
     }
 
-    fn square(.i32 value) .i32 {
-        stack .i32 result;
-        
-        result = value * value;
+    fn populate_fib(.dword_ptr buffer, .i32 size, .i32 a, .i32 b) {
+        if(size <= 0){
+            return;
+        }
 
-        return result;
-    }
-
-    fn cube(.i32 value) .i32 {
-        stack .i32 result;
-
-        result = value * value * value;
-
-        return result;
-    }
-
-    fn populate(.i32 value) .i32 {
-        stack .dword_ptr array = { 0, 0 };
-
-        [ array ] = value;
-        [ array + 1 ] = value;
-
-        return value;
+        [buffer] = (a + b);
+    
+        populate_fib(buffer+1, size-1, b, a+b);
     }
 }
 
@@ -141,109 +58,3 @@ lib stdio {
     }
 }
 
-
-
-/*
-struct point {
-    x .i32,
-    y .i32
-}
-
-fn example(){
-    stack .(point) origin;
-    stack .(point) position;
-    stack .ptr cursor;
-
-    cursor = @origin;
-
-    [ (.dword_ptr) cursor + $struct{point, x}] = 0;
-    [ (.dword_ptr) cursor + $struct{point, y}] = 0;
-
-    cursor = @position;
-
-    [ (.dword_ptr) cursor + $struct{point, x}] = 10; // *(int*)(cursor + offsetof(struct point, x))
-    [ (.dword_ptr) cursor + $struct{point, y}] = 100;
-}
-
-fn set_point(.ptr target_point, .i32 x, .i32 y){
-    [ (.dword_ptr) target_point + $struct{point, x}] = x;
-    [ (.dword_ptr) target_point + $struct{point, y}] = y;
-}
-
-fn add_point(.ptr dest_point, .ptr additional_point){
-    [ (.dword_ptr) dest_point + $struct{point, x}] += 
-        [ (.dword_ptr) additional_point + $struct{point, x}];
-
-    [ (.dword_ptr) dest_point + $struct{point, y}] += 
-        [ (.dword_ptr) additional_point + $struct{point, y}];
-}
-
-*/
-/*
-proc Foo(entry: "main") {
-    link stdlib;
-    link stdio, stdmath;
-
-    static .cstr message0 = "Hello World\n";
-    static .cstr message1 = "Your number is: ";
-
-    glob fn main() {
-        stack .i32 root = 5;
-        stack .i32 root_squared;
-
-
-        root_squared = -square(++root * (root-- + 1));
-
-        stdio.print_str(message0);
-        stdio.print_str(message1);
-        stdio.print_i32(root_squared);
-        stdio.putch('\n');
-    }
-
-    fn square(.i32 value) .i32 {
-        stack .i32 result;
-
-        result = value * value;
-    }
-}
-*/
-/*
-proc Example(entry: main){
-    link stdio;
-
-    static .cstr format = "Hello %s\nNum: %d\n";
-    static .cstr world = "World";
-
-    glob fn main() {
-        stack .i32 value = 5;
-    }
-
-    fn square(.i32 a, .i32 b) .i32 {
-        return a * b;
-    }
-
-    fn factorial(.i32 n) .i32 {
-        stack .i32 value;
-
-        if(n <= 1){
-            return 1;
-        }
-
-        value = 1;
-
-        while(n > 1){
-            value *= n;
-            n--;
-        }
-
-        return value;
-    }
-
-}
-
-lib stdio {
-    glob fn printf(.cstr fmt, $va_args{}){
-        $ccall("printf", fmt, $va_expand{});
-    }
-}
-*/

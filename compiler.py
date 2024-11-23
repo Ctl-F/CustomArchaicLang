@@ -535,6 +535,13 @@ class Compiler:
                 self.compile_ref(expr)
             case "macro_sizeof":
                 self.compile_macro_sizeof(expr)
+            case "argument_list":
+                idx = 0
+                for child in expr.children:
+                    self.compile_expression(child)
+                    if idx+1 < len(expr.children):
+                        self.current_object.write_source(", ")
+                    idx += 1
 
     def compile_plus_eq(self, node):
         self.compile_expression(node.children[0])
@@ -856,8 +863,8 @@ class Compiler:
         myself = self.while_counter
         self.while_counter += 1
 
-        has_else = node.children[-1].data == "else"
-        offset = 1 if has_else else 0
+        has_else = node.children[-1] != None and node.children[-1].data == "else"
+        offset = 1 #if has_else else 0
 
         if has_else:
             self.break_labels.append("while_%s_else" % myself)
@@ -878,11 +885,20 @@ class Compiler:
             self.current_object.write_source("while_%s_end:\n" % myself)
 
     def compile_do_while(self, node):
-        pass
+        self.current_object.write_source("do {\n")
+        self.break_labels.append(None)
+
+        for i in range(0, len(node.children)-1):
+            self.compile_statement(node.children[i])
+
+        self.current_object.write_source("    } while(")
+        self.compile_expression(node.children[-1])
+        self.current_object.write_source(");\n")
+        self.break_labels.pop()
 
     def compile_for(self, node):
-        has_else = node.children[-1].data == "else"
-        offset = 1 if has_else else 0
+        has_else = node.children[-1] != None and node.children[-1].data == "else"
+        offset = 1 #if has_else else 0
 
         myself = self.for_counter
         self.for_counter += 1
@@ -900,7 +916,7 @@ class Compiler:
         self.compile_expression(node.children[2])
         self.current_object.write_source("){\n")
 
-        for i in range(1, len(node.children) - offset):
+        for i in range(3, len(node.children) - offset):
             self.compile_statement(node.children[i])
         
         self.current_object.write_source("    }\n")
