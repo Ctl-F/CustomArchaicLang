@@ -199,7 +199,7 @@ class ObjectInfo:
 
         links = ""
         for link in self.target_link_objects:
-            links += "%slib%scal.o" % (target_dir, link)
+            links += "%slib%scal.o " % (target_dir, link)
 
         compile_only = "-c" if self.target_type == ObjectType.Library else ""
 
