@@ -1,0 +1,73 @@
+lib ErrorExample {
+    glob ErrorSet{ UnknownError, OutOfBoundsError, InvalidInputError };
+
+    glob fn ThrowsError(.i32 input) $result{.i32} {
+        if input < 10 {
+            return $err{ InvalidInputError };
+        }
+        return $ok{ input };
+    }
+
+
+    glob fn CatchesError() {
+        stack .i32 bad_input = 9;
+        stack .i32 good_input = 11;
+        stack .i32 result;
+        stack .cstr message = "Bad Input\n";
+        stack .cstr message2 = "Unknown Error\n";
+
+        try ThrowsError(bad_input) {
+            result = $result{};
+        }
+        catch {
+            if $error{} == InvalidInputError {
+                io.PrintStr(message);
+            }
+            else {
+                io.PrintStr(message2);
+            }
+            result = 10;
+        }
+        
+
+    }
+
+}
+
+
+/** Translated
+
+// header.h
+#define ErrorExample_UnknownError 0
+#define ErrorExample_OutOfBoundsError 1
+#define ErrorExample_InvalidInputError 2
+
+typedef struct {
+    bool IsError;
+    union {
+        int Error;
+        int Ok;
+    }
+} ErrorExample_ResultType_i32;
+
+// source.c
+#define UnknownError 0
+#define OutOfBoundsError 1
+#define InvalidInputError 2
+
+ErrorExample_ResultType_i32 ThrowsError(int input){
+    if(input < 10){
+        return (ErrorExample_ResultType_i32){ .IsError = true, .Error = InvalidInputError };
+    }
+    return (ErrorExample_ResultType_i32){ .IsError = false, .Ok = input };
+}
+
+void CatchesError() {
+    int bad_input = 9;
+    int good_input = 11;
+    int result;
+
+
+}
+
+**/

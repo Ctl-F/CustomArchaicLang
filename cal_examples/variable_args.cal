@@ -1,0 +1,159 @@
+lib simple_io {
+    c_include "stdio.h";
+
+    glob fn PrintStr(.cstr ptr) {
+        stack .cstr fmt = "%s";
+        $c{{ printf(fmt, ptr); }};
+    }
+    glob fn PrintI32(.i32 val) {
+        stack .cstr fmt = "%d";
+        $c{{ printf(fmt, val); }};
+    }
+    glob fn PrintF32(.f32 val){
+        stack .cstr fmt = "%f";
+        $c{{ printf(fmt, val); }};
+    }
+    glob fn PrintChar(.i8 ch) {
+        $c{{ putchar(ch); }};
+    }
+
+    glob fn Printf(.cstr format, $vparams{args}){
+        stack .cstr cursor;
+        cursor = format;
+
+        //$vbegin{args};
+
+        while [cursor] {
+            if [cursor] == '%' {
+                cursor++;
+
+                if ![cursor] {
+                    PrintChar('%');
+                    break;
+                }
+
+                if [cursor] == 's'{
+                    stack .cstr string;
+                    string = $varg{ .cstr, args };
+                    PrintStr(string);
+                    cursor++;
+                    continue;
+                }
+                
+                if [cursor] == 'd' {
+                    stack .i32 num;
+                    num = $varg{ .i32, num };
+                    PrintI32(num);
+                    cursor++;
+                    continue;
+                }
+
+                if [cursor] == 'f' {
+                    stack .f32 num;
+                    num = $varg{ .i32, num };
+                    PrintF32(num);
+                    cursor++;
+                    continue;
+                }
+
+                // not an escape character so print the percent sign
+                // and fall through to display the current character.
+                PrintChar('%');
+            }
+            PrintChar([cursor]);
+            cursor++;
+            continue;
+        }
+
+        //$vend{args};
+    }
+
+
+}
+
+proc Main {
+    link simple_io;
+
+    glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
+        stack .i32 number = 42;
+        stack .f32 number2 = 3.14;
+        stack .cstr message = "Hello World";
+
+        simple_io.Printf("%s\n(%d, %f)\n", $vargs{ number, number2, message });
+        
+
+        return 0;
+    }
+
+}
+/** Translated:
+
+void Printf(const char* format, void* args_buffer){
+    const char* cursor = format;
+
+    //$vbegin is for future or implementation specific needs and for the current
+    // version is technically unneccesary
+    while(*cursor){
+        if (*cursor) == '%' {
+            cursor++;
+
+            if (!*cursor) {
+                PrintChar('%');
+                break;
+            }
+
+            if (*cursor) == 's'{
+                const char* string;
+                string = *(const char**)(buffer); buffer += sizeof(const char*); //$varg{ .cstr, args };
+                PrintStr(string);
+                cursor++;
+                continue;
+            }
+            
+            if (*cursor) == 'd' {
+                int num;
+                num = *(int*)(buffer); buffer += sizeof(int); //$varg{ .i32, num };
+                PrintI32(num);
+                cursor++;
+                continue;
+            }
+
+            if (*cursor) == 'f' {
+                float num;
+                num = *(float*)(buffer); buffer += sizeof(float); //$varg{ .i32, num };
+                PrintF32(num);
+                cursor++;
+                continue;
+            }
+
+            // not an escape character so print the percent sign
+            // and fall through to display the current character.
+            PrintChar('%');
+        }
+        PrintChar((*cursor));
+        cursor++;
+        continue;
+    }
+
+    //free(args_buffer);
+}
+
+glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
+    int number = 42;
+    float number2 = 3.14;
+    const char* message = "Hello World";
+
+    int8_t vargs_buffer[ sizeof(int) + sizeof(float) + sizeof(const char*) ] = {0}; //malloc(sizeof(int) + sizeof(float) + sizeof(const char*));
+    void* t_cursor = vargs_buffer;
+
+    *(const char**)(t_cursor) = message; t_cursor += sizeof(const char*);
+    *(int*)(t_cursor) = number; t_cursor += sizeof(int);
+    *(float*)(t_cursor) = number2; t_cursor += sizeof(float);
+
+    simple_io_Printf("%s\n(%d, %f)\n", vargs_buffer);
+    
+
+    return 0;
+}
+
+**/

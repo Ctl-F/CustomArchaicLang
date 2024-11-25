@@ -1,0 +1,22 @@
+lib simple_io {
+    c_include "stdio.h";
+
+    glob fn prints(.cstr string) {
+        $c{{
+            printf("%s", string);
+        }};
+    }
+}
+
+proc Hello {
+    link simple_io;
+
+    glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
+        stack .cstr message = "Hello World\n";
+        
+        simple_io.prints(message);
+
+        return 0;
+    }
+    
+}
