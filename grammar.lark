@@ -39,19 +39,23 @@ func_def: GLOBAL? "fn" NAME "(" [param_list] ")" TYPE? func_body -> function
 func_body: "{" statement* "}" -> function_body
 func_call: lvalue "(" argument_list? ")"
 
-static_allocation: "static" TYPE NAME [ "=" (value | static_array) ]
-stack_allocation: "stack" TYPE NAME [ "=" (value | static_array) ]
+static_allocation: "static" TYPE NAME [ "=" ( macro_buffer | value | static_array ) ]
+stack_allocation: "stack" TYPE NAME [ "=" ( macro_buffer | value | static_array ) ]
 
 GLOBAL: "glob"
 
 ?macro: "$sizeof" "{" TYPE "}" -> macro_sizeof 
 
+macro_buffer: "$buffer" "{" TYPE "," NUMBER "}" -> macro_buffer_typed_alloc
+    | "$buffer" "{" [ NAME "." ] NAME "," NUMBER "}" -> macro_buffer_struct_alloc
+    | "$buffer" "{" NUMBER "}" -> macro_buffer_bytes_alloc
+
 static_offset: "+" (NUMBER | NAME | macro) -> static_plus
     | "-" (NUMBER | NAME | macro) -> static_minus
 
 ?lvalue: [NAME "."] NAME -> var
-    | "[" [ "(" TYPE ")" ] [NAME "."] NAME static_offset* "]" -> deref_var
-    | "[" [ "(" TYPE ")" ] func_call static_offset* "]" -> deref_func_call
+    | "[" [ TYPE ] [NAME "."] NAME static_offset* "]" -> deref_var
+    | "[" [ TYPE ] func_call static_offset* "]" -> deref_func_call
 
 expression: assignment
 
@@ -71,11 +75,24 @@ expression: assignment
     | logic_andor "&&" logic_cmp -> logic_and
     | logic_andor "||" logic_cmp -> logic_or
 
-?logic_cmp: sum
-    | logic_cmp ">=" sum -> logic_ge
-    | logic_cmp "<=" sum -> logic_le
-    | logic_cmp ">" sum -> logic_gt
-    | logic_cmp "<" sum -> logic_lt
+?logic_cmp: bin_or
+    | logic_cmp ">=" bin_or -> logic_ge
+    | logic_cmp "<=" bin_or -> logic_le
+    | logic_cmp ">" bin_or -> logic_gt
+    | logic_cmp "<" bin_or -> logic_lt
+
+?bin_or: bin_xor
+    | bin_or "|" bin_xor
+
+?bin_xor: bin_and
+    | bin_xor "^" bin_and
+
+?bin_and: bin_shift
+    | bin_and "&" bin_shift
+
+?bin_shift: sum
+    | bin_shift ">>" sum -> bin_rshift
+    | bin_shift "<<" sum -> bin_lshift
 
 ?sum: product
     | sum "+" product -> add
@@ -90,6 +107,7 @@ expression: assignment
     | macro
     | "-" atom -> neg
     | "!" atom -> not
+    | "~" atom -> bin_not
     | "@" lvalue -> ref
     | func_call
     | lvalue
@@ -100,11 +118,10 @@ expression: assignment
     | "(" expression ")" -> group
 
 ?statement: stack_allocation ";"
-    | loop_flow_stmt ";"
     | expression ";"
     | if_statement
     | while_statement
-    | do_while_statement
+    | do_while_statement ";"
     | for_statement
     | return_statement
     | raw_c_statement
@@ -115,14 +132,15 @@ if_statement: "if" expression "{" statement* "}" else_branch*
 
 else: "else" "{" statement* "}"
 
-?loop_flow_stmt: "break" -> break
-    | "continue" -> continue
+
+loop_flow_stmt: "break" ";" -> break
+    | "continue" ";" -> continue
 
 return_statement: "return" expression? ";"
 
 while_statement: "while" expression "{" (statement|loop_flow_stmt)* "}" [else]
-do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" expression ";"
-for_statement: "for" "(" expression ";" expression ";" expression* ")" "{" (statement|loop_flow_stmt)* "}" [else]
+do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" expression
+for_statement: "for" "(" [expression] ";" expression ";" [expression] ")" "{" (statement|loop_flow_stmt)* "}" [else]
 
 INLINE_C_BODY: /\$c\{\{.*\}\}/
 
@@ -136,10 +154,12 @@ TYPE: ".cstr"
     | ".f32"
     | ".f64"
     | ".ptr"
-    | ".byte_ptr"
-    | ".word_ptr"
-    | ".dword_ptr"
-    | ".qword_ptr"
+    | ".i8_ptr"
+    | ".i16_ptr"
+    | ".i32_ptr"
+    | ".i64_ptr"
+    | ".f32_ptr"
+    | ".f64_ptr"
     | ".ptr_ptr"
 
 CHAR: /'\\?.'/

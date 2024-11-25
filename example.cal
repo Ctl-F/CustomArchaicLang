@@ -6,12 +6,14 @@ proc Foo(entry: "main") {
     glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
         stdio.print_str(hello_message);
 
-        stack .dword_ptr buffer = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        stack .ptr buffer_20bytes = $buffer{ 20 };
+        stack .i32_ptr buffer = $buffer{ .i32, 10 }; // { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
         stack .i32 size = 10;
         stack .i32 index = 0;
 
         populate_fib(buffer+1, size-1, 0, 1);
 
+        
         for(index = 0; index<size; index++){
             stdio.print_i32( [ buffer + index ] );
 
@@ -19,13 +21,14 @@ proc Foo(entry: "main") {
                 stdio.putch(',');
                 stdio.putch(' ');
             }
-        }    
+        } 
+        
         stdio.putch('\n');
 
         return 0;
     }
 
-    fn populate_fib(.dword_ptr buffer, .i32 size, .i32 a, .i32 b) {
+    fn populate_fib(.i32_ptr buffer, .i32 size, .i32 a, .i32 b) {
         if(size <= 0){
             return;
         }

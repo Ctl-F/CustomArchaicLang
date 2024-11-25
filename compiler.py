@@ -230,6 +230,7 @@ class Compiler:
         self.for_counter = 0
         self.while_counter = 0
         self.break_labels = [ None ]
+        self.delta = 0
 
     def compile(self, tree, **kw_args):
         self.compilation_args = kw_args
@@ -383,14 +384,18 @@ class Compiler:
                 return "char*"
             case ".ptr":
                 return "void*"
-            case ".byte_ptr":
+            case ".i8_ptr":
                 return "int8_t*"
-            case ".word_ptr":
+            case ".i16_ptr":
                 return "int16_t*"
-            case ".dword_ptr":
+            case ".i32_ptr":
                 return "int32_t*"
-            case ".qword_ptr":
+            case ".i64_ptr":
                 return "int64_t*"
+            case ".f32_ptr":
+                return "float*"
+            case ".f64_ptr":
+                return "double"
             case "":
                 return "void"
             case None:
@@ -533,6 +538,18 @@ class Compiler:
                 self.compile_value(expr)
             case "ref":
                 self.compile_ref(expr)
+            case "bin_or":
+                self.compile_bin_or(expr)
+            case "bin_and":
+                self.compile_bin_and(expr)
+            case "bin_xor":
+                self.compile_bin_xor(expr)
+            case "bin_rshift":
+                self.compile_bin_rshift(expr)
+            case "bin_lshift":
+                self.compile_bin_lshift(expr)
+            case "bin_not":
+                self.compile_bin_not(expr)
             case "macro_sizeof":
                 self.compile_macro_sizeof(expr)
             case "argument_list":
@@ -648,6 +665,35 @@ class Compiler:
         self.current_object.write_source(" !")
         self.compile_expression(node.children[0])
 
+    def compile_bin_or(self, node):
+        self.compile_expression(node.children[0])
+        self.current_object.write_source(" | ")
+        self.compile_expression(node.children[1])
+
+    def compile_bin_and(self, node):
+        self.compile_expression(node.children[0])
+        self.current_object.write_source(" & ")
+        self.compile_expression(node.children[1])
+
+    def compile_bin_xor(self, node):
+        self.compile_expression(node.children[0])
+        self.current_object.write_source(" ^ ")
+        self.compile_expression(node.children[1])
+
+    def compile_bin_rshift(self, node):
+        self.compile_expression(node.children[0])
+        self.current_object.write_source(" >> ")
+        self.compile_expression(node.children[1])
+
+    def compile_bin_lshift(self, node):
+        self.compile_expression(node.children[0])
+        self.current_object.write_source(" << ")
+        self.compile_expression(node.children[1])
+
+    def compile_bin_not(self, node):
+        self.current_object.write_source(" ~")
+        self.compile_expression(node.children[0])
+
     def compile_func_call(self, node):
         self.compile_expression(node.children[0])
         self.current_object.write_source("(")
@@ -668,6 +714,50 @@ class Compiler:
             var_name = str(node.children[1])
 
         self.current_object.write_source(var_name)
+
+    def compile_macro_buffer_bytes(self, static_keyword, c_type, c_name, node):
+        buffer_name = "_CAL__buffer%s___" % self.delta
+        self.delta += 1
+
+        self.current_object.write_source(static_keyword, "char %s[%s] = {" % (buffer_name, node.children[0]), "0", "};\n")
+
+        if static_keyword == "":
+            self.current_object.write_source("    ")
+
+        self.current_object.write_source(static_keyword, c_type, " ", c_name, " = ", buffer_name, ";\n")
+
+
+    def compile_macro_buffer_typed(self, static_keyword, c_type, c_name, node):
+        buffer_name = "_CAL__buffer%s___" % self.delta
+        self.delta += 1
+
+        buffer_type = self.get_c_type(str(node.children[0]))
+        buffer_count = str(node.children[1])
+
+        self.current_object.write_source(static_keyword, buffer_type, " ", buffer_name, "[", buffer_count, "] = {", "0", "};\n")
+
+        if static_keyword == "":
+            self.current_object.write_source("    ")
+        
+        self.current_object.write_source(static_keyword, c_type, " ", c_name, " = ", buffer_name, ";\n")
+
+    def compile_macro_buffer_struct(self, static_keyword, c_type, c_name, node):
+        buffer_name = "_CAL_buffer%s___" % self.delta
+        self.delta += 1
+        # TEST THIS STILL
+        struct_name = str(node.children[1])
+
+        if node.children[0] != None:
+            struct_name = "%s_%s" % (node.children[0], struct_name)
+        
+        buffer_count = str(node.children[2])
+
+        self.current_object.write_source(static_keyword, struct_name, " ", buffer_name, "[", buffer_count, "] = {", "0", "};\n")
+
+        if static_keyword == "":
+            self.current_object.write_source("    ")
+        
+        self.current_object.write_source(static_keyword, c_type, " ", c_name, " = ", buffer_name, ";\n")
 
     def compile_cast(self, node):
         cast_type = self.get_c_type(str(node))
@@ -790,10 +880,20 @@ class Compiler:
             
             if is_ptr and value_node.data == "static_array":
                 self.current_object.write_source(static_keyword, c_type[:-1], " ", c_name, "[]")
+            elif is_ptr and value_node.data == "macro_buffer_bytes_alloc":
+                self.compile_macro_buffer_bytes(static_keyword, c_type, c_name, value_node)
+                return
+            elif is_ptr and value_node.data == "macro_buffer_typed_alloc":
+                self.compile_macro_buffer_typed(static_keyword, c_type, c_name, value_node)
+                return
+            elif is_ptr and value_node.data == "macro_buffer_struct_alloc":
+                self.compile_macro_buffer_struct(static_keyword, c_type, c_name, value_node)
+                return
             else:
                 self.current_object.write_source(static_keyword, c_type, " ", c_name)
             
             self.current_object.write_source(" = ")
+
             if value_node.data == "static_array":
                 self.compile_static_array(value_node)
             else:
@@ -909,11 +1009,13 @@ class Compiler:
             self.break_labels.append(None)
 
         self.current_object.write_source("for(")
-        self.compile_expression(node.children[0])
+        if node.children[0] != None:
+            self.compile_expression(node.children[0])
         self.current_object.write_source("; ")
         self.compile_expression(node.children[1])
         self.current_object.write_source("; ")
-        self.compile_expression(node.children[2])
+        if node.children[2] != None:
+            self.compile_expression(node.children[2])
         self.current_object.write_source("){\n")
 
         for i in range(3, len(node.children) - offset):
@@ -981,16 +1083,17 @@ if __name__ == "__main__":
 Version 1.0
 ----------------------------
 DONE: Finish Expressions (reference, derefrence, dereference+func_call)
-TODO: Branching Statements (if, for, while, break, continue)
-TODO: Add Binary operators (both to the compiler + grammar)
+DONE*: Branching Statements (if, for, while, break, continue)
+DONE: Add Binary operators (both to the compiler + grammar)
+TODO: Structs (struct + $struct{name, member} macro)
 TODO: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
-TODO: Structs (struct layout + $struct{name, member} macro)
 TODO: Testing framework
 TODO: Build System
 TODO: Allow raw_c_statement at top level
 TODO: Stdlib + Stdio + String + Math libraries
 TODO: Error Unions and Handling
 TODO: Better Compiler Error Handling
+TODO: Switch/Match expression
 
 Version 2.0
 -----------------------------
