@@ -1,0 +1,12 @@
+proc BinaryOperators {
+
+
+    glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
+        stack .i32 foo = 0;
+
+        foo = ~10 | 11 ^ 12 & (12 >> 3);
+
+        return 0;
+    }
+
+}

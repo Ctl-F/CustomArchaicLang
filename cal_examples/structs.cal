@@ -1,0 +1,77 @@
+lib StructExample {
+    link math;
+    link io;
+    
+    glob struct Point {
+        .f32 x;
+        .f32 y;
+    }
+
+    glob fn point_set(.ptr this, .f32 x, .f32 y) {
+        [.f32_ptr this + $struct{Point, x}] = x;
+        [.f32_ptr this + $struct{Point, y}] = y;
+    }
+
+    glob fn point_distance_to(.ptr start, .ptr end) .f32 {
+        stack .f32 x1;
+        stack .f32 y1;
+        stack .f32 x2;
+        stack .f32 y2;
+
+        x1 = [.f32_ptr start + $struct{Point, x}];
+        y1 = [.f32_ptr start + $struct{Point, y}];
+        x2 = [.f32_ptr end + $struct{Point, x}];
+        y2 = [.f32_ptr end + $struct{Point, y}];
+
+        return math.Sqrtf(math.Sqrf(x2 - x1) + math.Sqrf(y2 - y1));
+    }
+
+    fn struct_consumer() {
+        stack $struct{Point} origin;
+        stack $struct{Point} position;
+        stack .f32 distance;
+        stack .ptr origin_addr;
+        stack .ptr pos_addr;
+
+        origin_addr = @origin;
+        pos_addr = @position;
+
+        point_set(origin_addr, 0, 0);
+        point_set(pos_addr, 10, 10);
+
+        distance = point_distance_to(origin_addr, pos_addr);
+
+        io.PrintF("Distance from %f,%f to %f,%f is: ",
+            $vargs{
+                [ .f32_ptr origin_addr + $struct{Point, x} ],
+                [ .f32_ptr origin_addr + $struct{Point, y} ],
+                [ .f32_ptr pos_addr + $struct{Point, x} ],
+                [ .f32_ptr pos_addr + $struct{Point, y} ],
+                distance
+            });
+    }
+
+
+
+    // RAII Example
+    // This may or may not actually be added.
+    glob construct[Point] fn ConstructPoint(.ptr this) $result{} {
+        [.dword_ptr this + $struct{Point, x}] = 0; // *(int*)(this + offsetof(struct Point, x))
+        [.dword_ptr this + $struct{Point, y}] = 0;
+    }
+
+    glob deconstruct[Point] fn DeletePoint(.ptr this) {
+        [.dword_ptr this + $struct{Point, x}] = 0;
+        [.dword_ptr this + $struct{Point, y}] = 0;
+    }
+
+    glob fn Consumer() {
+        stack $struct{Point} origin;
+        origin = $new{}; // will call the contructor for type Point
+
+        // consume origin here
+
+        $delete{origin}; // will call the destructor for the type Point
+    }
+
+}
