@@ -41,6 +41,7 @@ lib StructExample {
 
         distance = point_distance_to(origin_addr, pos_addr);
 
+        /*
         io.PrintF("Distance from %f,%f to %f,%f is: ",
             $vargs{
                 [ .f32_ptr origin_addr + $struct{Point, x} ],
@@ -49,10 +50,11 @@ lib StructExample {
                 [ .f32_ptr pos_addr + $struct{Point, y} ],
                 distance
             });
+        */
     }
 
 
-
+/*
     // RAII Example
     // This may or may not actually be added.
     glob construct[Point] fn ConstructPoint(.ptr this) $result{} {
@@ -73,5 +75,6 @@ lib StructExample {
 
         $delete{origin}; // will call the destructor for the type Point
     }
+*/
 
 }

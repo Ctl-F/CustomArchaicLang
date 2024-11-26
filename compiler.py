@@ -15,6 +15,11 @@ class OptimizationLevel(Enum):
     LowOptimization = 1
     HighOptimization = 2
 
+class OutputTarget(Enum):
+    Source = 0
+    Header = 1
+    PreDecl = 2
+
 """
     An ObjectInfo stores all the information about whatever
     "object" we're currently compiling. An object referring to 
@@ -159,6 +164,15 @@ class ObjectInfo:
         for arg in what:
             self.target_pre_declarations.append(arg)
 
+    def write(self, target, *what):
+        match target:
+            case OutputTarget.Source:
+                self.write_source(*what)
+            case OutputTarget.Header:
+                self.write_header(*what)
+            case OutputTarget.PreDecl:
+                self.write_pre_decl(*what)
+
     def compile(self, **kwargs):
         #kw_args = kwargs.items()
 
@@ -246,6 +260,10 @@ class Compiler:
             for item in ls:
                 self.compile(item)
 
+    def write_standard_headers(self):
+        self.current_object.write_pre_decl("\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n\n")
+
+
     def compile_lib(self, lib_node):
         self.while_counter = 0
         self.for_counter = 0
@@ -259,6 +277,8 @@ class Compiler:
 
         self.current_object.write_header("#ifndef ", obj_name, "_h\n#define ", obj_name, "_h\n")
         self.current_object.write_pre_decl("#include \"", self.current_object.target_header_name, "\"\n\n")
+
+        self.write_standard_headers()
 
         self.compile_code_unit(lib_node.children[1])
 
@@ -279,8 +299,7 @@ class Compiler:
         print("Compiling process: %s" % obj_name)
 
         #handle the key-value definitions in tye proc list
-
-        self.current_object.write_pre_decl("#include <stdint.h>\n#include <stdbool.h>\n\n")
+        self.write_standard_headers()
 
         self.compile_code_unit(proc_node.children[2])
 
@@ -291,6 +310,36 @@ class Compiler:
 
     def compile_test(self, test_node):
         pass
+
+    def compile_struct_def(self, struct_node):
+        is_global = struct_node.children[0] != None and str(struct_node.children[0]) == "glob"
+        name = str(struct_node.children[1])
+
+        target = OutputTarget.Header if is_global else OutputTarget.PreDecl
+
+        visible_name = ("%s_%s" % (self.current_object.target_name, name)) if is_global else name
+        
+        self.current_object.write(target, "struct ", visible_name, "{\n" )
+
+        for i in range(2, len(struct_node.children)):
+            member_node = struct_node.children[i]
+            c_type = self.get_c_type(str(member_node.children[0]))
+            m_name = str(member_node.children[1])
+
+            self.current_object.write(target, "    ", c_type, " ", m_name, ";\n")
+
+        self.current_object.write(target, "};\n")
+
+        if is_global:
+            self.current_object.write_pre_decl("#define %s %s\n" % (name, visible_name))
+
+
+    def compile_struct_member_macro(self, macro_node):
+        name = str(macro_node.children[1])
+        if macro_node.children[0] != None:
+            name = "%s_%s" % (macro_node.children[0], name)
+        self.current_object.write_source("offsetof(struct %s, %s)" % (name, macro_node.children[2]))
+
 
     def compile_code_unit(self, unit_body):
         self.current_object.write_header("#include <stdint.h>\n")
@@ -306,10 +355,12 @@ class Compiler:
                     self.compile_static_allocation(item)
                 case "link":
                     self.compile_link(item)
+                case "struct_def":
+                    self.compile_struct_def(item)
                 case _:
                     print("Error compiling code unit, unexpected item %s" % item)
 
-            self.current_object.write_source("\n");
+            self.current_object.write_source("\n")
 
     def compile_link(self, link_node):
         for link in link_node.children:
@@ -367,6 +418,12 @@ class Compiler:
         self.compile_code_body(func_node.children[cursor])
 
     def get_c_type(self, type):
+        if type.startswith("$struct{"):
+            type = type[8:-1]
+            type = type.strip()
+            type = type.replace(".", "_")
+            return "struct %s" % type
+
         match type:
             case ".i32":
                 return "int32_t"
@@ -413,10 +470,18 @@ class Compiler:
         if params_list == None:
             return []
 
-        for param in params_list.children:
+        is_va = params_list.children[-1] != None
+        offset = 1
+
+        for i in range(len(params_list.children)- offset ):
+            param= params_list.children[i]
             type = self.get_c_type(str(param.children[0]))
             name = str(param.children[1])
             params.append((type, name))
+
+        if is_va:
+            params.append(("void*", "__VA_ARGS_BUF__"))
+        
         return params
 
     def compile_statement(self, item):
@@ -552,6 +617,10 @@ class Compiler:
                 self.compile_bin_not(expr)
             case "macro_sizeof":
                 self.compile_macro_sizeof(expr)
+            case "struct_member_offset":
+                self.compile_struct_member_macro(expr)
+            case "va_arg":
+                self.compile_va_arg(expr)
             case "argument_list":
                 idx = 0
                 for child in expr.children:
@@ -694,7 +763,28 @@ class Compiler:
         self.current_object.write_source(" ~")
         self.compile_expression(node.children[0])
 
+    def compile_va_arg(self, node):
+        pass
+
     def compile_func_call(self, node):
+        if node.children[1].children[-1] != None:
+            #variadic function call
+            va_node = node.children[1].children[-1]
+            pass # the current way that we planned for va_args
+            # to be handled is flawed. If we pass in expressions
+            # then the original sizeof() could undesired second 
+            # calls, and if we're calling a variadic function
+            # in the middle of an expression then we'd start 
+            # writing the buffer also in the middle of the expression
+            # causing invalid C.
+            # We either have to think of a new way, or start keeping
+            # track of symbol types and write an equation type solver
+            # Even if we do that we still have to resolve the buffer
+            # creation code location. Either way this isn't as easy
+            # of a feature as expected and other features may need to
+            # be considered first with this one of the backburner.
+            # Recommended Next: Error Unions and Catching, Testing + Build System
+
         self.compile_expression(node.children[0])
         self.current_object.write_source("(")
 
@@ -1058,7 +1148,7 @@ def main():
     global Grammar, errors
     code = ""
 
-    file = "example.cal"
+    file = "./cal_examples/variable_args.cal"
     if len(sys.argv) > 1:
         file = sys.argv[1]
 
@@ -1085,8 +1175,8 @@ Version 1.0
 DONE: Finish Expressions (reference, derefrence, dereference+func_call)
 DONE*: Branching Statements (if, for, while, break, continue)
 DONE: Add Binary operators (both to the compiler + grammar)
-TODO: Structs (struct + $struct{name, member} macro)
-TODO: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
+DONE: Structs (struct + $struct{name, member} macro)
+TODO*: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
 TODO: Testing framework
 TODO: Build System
 TODO: Allow raw_c_statement at top level

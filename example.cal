@@ -1,18 +1,19 @@
 proc Foo(entry: "main") {
     link stdio;
+    link vector;
 
     static .cstr hello_message = "Hello World\n";
+
+    
 
     glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
         stdio.print_str(hello_message);
 
-        stack .ptr buffer_20bytes = $buffer{ 20 };
-        stack .i32_ptr buffer = $buffer{ .i32, 10 }; // { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        stack .i32_ptr buffer = $buffer{ .i32, 10 };
         stack .i32 size = 10;
         stack .i32 index = 0;
 
         populate_fib(buffer+1, size-1, 0, 1);
-
         
         for(index = 0; index<size; index++){
             stdio.print_i32( [ buffer + index ] );
@@ -23,6 +24,11 @@ proc Foo(entry: "main") {
             }
         } 
         
+        stdio.putch('\n');
+
+        stack $struct{vector.vec2} position;
+        vector.vec2_set(@position, 11, 43);
+        vector.vec2_print(@position);
         stdio.putch('\n');
 
         return 0;
@@ -39,6 +45,26 @@ proc Foo(entry: "main") {
     }
 }
 
+lib vector {
+    link stdio;
+
+    glob struct vec2 {
+        .f32 x;
+        .f32 y;
+    }
+
+    glob fn vec2_set(.ptr this, .f32 x, .f32 y) {
+        [.f32_ptr this + $struct{vec2, x}] = x;
+        [.f32_ptr this + $struct{vec2, y}] = y;
+    }
+
+    glob fn vec2_print(.ptr this){
+        stdio.print_f32([.f32_ptr this + $struct{vec2, x}]);
+        stdio.putch(',');
+        stdio.print_f32([.f32_ptr this + $struct{vec2, y}]);
+    }
+
+}
 
 lib stdio {
     c_include "stdio.h";

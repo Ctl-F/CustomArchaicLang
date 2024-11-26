@@ -15,10 +15,14 @@ keyval_pair: NAME ":" value
 
 
 param: TYPE NAME
-param_list: param [("," param)+]
+param_list: param [("," param)+] [("," VA_PARAMS)]
 
-?argument: assignment
-?argument_list: argument [("," argument)+]
+VA_PARAMS: "$va_args{}"
+va_args: "$va_args{" expression [("," expression)+] "}"
+va_arg: "$varg{" TYPE "}"
+
+?argument: expression
+?argument_list: argument [("," argument)+] [("," va_args)]
 
 proc_unit: "proc" NAME [ "(" keyval_list ")" ] unit_body -> begin_proc
 
@@ -26,11 +30,16 @@ lib_unit: "lib" NAME unit_body -> begin_lib
 test_unit: "test" NAME ";" -> begin_test
 unit_body: "{" toplevel_stmt* "}"
 
+struct_member: TYPE NAME ";"
+
+struct_def: [GLOBAL] "struct" NAME "{" struct_member* "}"
+struct_member_offset: "$struct" "{" [NAME "."] NAME "," NAME "}"
 
 ?toplevel_stmt: link_stmt ";"
     | static_allocation ";"
     | func_def
     | raw_c_statement
+    | struct_def
 
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
     | "c_include" STRING -> c_include
@@ -45,6 +54,7 @@ stack_allocation: "stack" TYPE NAME [ "=" ( macro_buffer | value | static_array 
 GLOBAL: "glob"
 
 ?macro: "$sizeof" "{" TYPE "}" -> macro_sizeof 
+    | struct_member_offset
 
 macro_buffer: "$buffer" "{" TYPE "," NUMBER "}" -> macro_buffer_typed_alloc
     | "$buffer" "{" [ NAME "." ] NAME "," NUMBER "}" -> macro_buffer_struct_alloc
@@ -110,6 +120,7 @@ expression: assignment
     | "~" atom -> bin_not
     | "@" lvalue -> ref
     | func_call
+    | va_arg
     | lvalue
     | atom "++" -> post_inc
     | atom "--" -> post_dec
@@ -124,6 +135,7 @@ expression: assignment
     | do_while_statement ";"
     | for_statement
     | return_statement
+    | loop_flow_stmt
     | raw_c_statement
 
 if_statement: "if" expression "{" statement* "}" else_branch*
@@ -133,20 +145,23 @@ if_statement: "if" expression "{" statement* "}" else_branch*
 else: "else" "{" statement* "}"
 
 
-loop_flow_stmt: "break" ";" -> break
+?loop_flow_stmt: "break" ";" -> break
     | "continue" ";" -> continue
 
 return_statement: "return" expression? ";"
 
-while_statement: "while" expression "{" (statement|loop_flow_stmt)* "}" [else]
-do_while_statement: "do" "{" (statement|loop_flow_stmt)* "}" "while" expression
-for_statement: "for" "(" [expression] ";" expression ";" [expression] ")" "{" (statement|loop_flow_stmt)* "}" [else]
+while_statement: "while" expression "{" (statement)* "}" [else]
+do_while_statement: "do" "{" (statement)* "}" "while" expression
+for_statement: "for" "(" [expression] ";" expression ";" [expression] ")" "{" (statement)* "}" [else]
 
 INLINE_C_BODY: /\$c\{\{.*\}\}/
 
 raw_c_statement: INLINE_C_BODY ";"
 
-TYPE: ".cstr"
+TYPE: PRIMITIVE_TYPE
+    | "$struct{" [NAME "."] NAME "}" 
+
+PRIMITIVE_TYPE: ".cstr"
     | ".i32"
     | ".i64"
     | ".i8" 

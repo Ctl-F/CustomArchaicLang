@@ -17,24 +17,26 @@ lib simple_io {
         $c{{ putchar(ch); }};
     }
 
-    glob fn Printf(.cstr format, $vparams{args}){
+    glob fn Printf(.cstr format, $va_args{}){
         stack .cstr cursor;
         cursor = format;
-
-        //$vbegin{args};
 
         while [cursor] {
             if [cursor] == '%' {
                 cursor++;
 
                 if ![cursor] {
+                    
+                    
                     PrintChar('%');
+
+
                     break;
                 }
 
                 if [cursor] == 's'{
                     stack .cstr string;
-                    string = $varg{ .cstr, args };
+                    string = $varg{ .cstr };
                     PrintStr(string);
                     cursor++;
                     continue;
@@ -42,7 +44,7 @@ lib simple_io {
                 
                 if [cursor] == 'd' {
                     stack .i32 num;
-                    num = $varg{ .i32, num };
+                    num = $varg{ .i32 };
                     PrintI32(num);
                     cursor++;
                     continue;
@@ -50,7 +52,7 @@ lib simple_io {
 
                 if [cursor] == 'f' {
                     stack .f32 num;
-                    num = $varg{ .i32, num };
+                    num = $varg{ .i32 };
                     PrintF32(num);
                     cursor++;
                     continue;
@@ -64,8 +66,6 @@ lib simple_io {
             cursor++;
             continue;
         }
-
-        //$vend{args};
     }
 
 
@@ -79,7 +79,7 @@ proc Main {
         stack .f32 number2 = 3.14;
         stack .cstr message = "Hello World";
 
-        simple_io.Printf("%s\n(%d, %f)\n", $vargs{ number, number2, message });
+        simple_io.Printf("%s\n(%d, %f)\n", $va_args{ message, number, number2 });
         
 
         return 0;
