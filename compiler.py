@@ -20,6 +20,45 @@ class OutputTarget(Enum):
     Header = 1
     PreDecl = 2
 
+COMPILER_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@dataclass
+class ProjectInfo:
+    name: str = ""
+    project_dir: str = ""
+    output_dir: str = ""
+    flags: list = field(default_factory=lambda: [])
+    search_paths: list = field(default_factory=lambda: [])
+    required_links_for_proc_main: list = field(default_factory=lambda: [])
+
+    def __init__(self, project_name, project_dir):
+        self.name = project_name
+        self.project_dir = project_dir
+        self.search_paths = []
+        self.flags = []
+        self.required_links_for_proc_main = []
+        self.dependancy_stack = []
+
+        self.output_dir = "%s/bin/" % project_dir
+
+        self.search_paths.append(os.path.join(project_dir, "src/"))
+        self.search_paths.append(os.path.join(COMPILER_DIR, "libraries/"))
+
+    def search_file(self, filename):
+        for path in self.search_paths:
+            name = os.path.join(path, filename)
+            if os.path.exists(name):
+                return name
+        return ""
+
+    def get_main_file(self):
+        file = self.search_file(self.name + ".cal")
+        if file == "":
+            file = self.search_file("main.cal")
+        return file
+    
+CurrentProject: ProjectInfo = None
+
 """
     An ObjectInfo stores all the information about whatever
     "object" we're currently compiling. An object referring to 
@@ -56,9 +95,12 @@ class ObjectInfo:
                 return ""
             
     def update_names(self):
+        global CurrentProject
         name = self.get_name()
         self.target_header_name = "%s.h" % name
         self.target_source_name = "%s.c" % name
+
+        CurrentProject.dependancy_stack.append(name)
 
     def get_local_func(self, name):
         for func in self.target_functions:
@@ -67,6 +109,8 @@ class ObjectInfo:
         return None
 
     def export(self):
+        global CurrentProject
+
         for private in self.target_functions:
             name = private["name"]
             params = private["params"]
@@ -144,11 +188,11 @@ class ObjectInfo:
 
             self.write_header("#endif\n\n")
 
-        if self.target_type == ObjectType.Library:
-            with open(self.target_header_name, "w") as f:
+        if self.target_type != ObjectType.Process:
+            with open(os.path.join(CurrentProject.output_dir, self.target_header_name), "w") as f:
                 f.write("".join(self.target_header_body))
 
-        with open(self.target_source_name, "w") as f:
+        with open(os.path.join(CurrentProject.output_dir, self.target_source_name), "w") as f:
             f.write("".join(self.target_pre_declarations))
             f.write("".join(self.target_source_body))
 
@@ -174,6 +218,7 @@ class ObjectInfo:
                 self.write_pre_decl(*what)
 
     def compile(self, **kwargs):
+        global CurrentProject
         #kw_args = kwargs.items()
 
         compiler = "gcc"
@@ -205,11 +250,16 @@ class ObjectInfo:
         if "keep_source" in kwargs:
             keep_source = kwargs["keep_source"]
 
-        if "target_dir" in kwargs:
-            target_dir = kwargs["target_dir"]
+        #if "target_dir" in kwargs:
+        #    target_dir = kwargs["target_dir"]
+        target_dir = CurrentProject.output_dir
 
         if not os.path.exists(target_dir):
             os.mkdir(target_dir)
+
+        for link in CurrentProject.required_links_for_proc_main:
+            if not link in self.target_link_objects:
+                self.target_link_objects.append(link)
 
         links = ""
         for link in self.target_link_objects:
@@ -217,9 +267,10 @@ class ObjectInfo:
 
         compile_only = "-c" if self.target_type == ObjectType.Library else ""
 
-        command = "%s %s -o %s%s %s %s %s" % (compiler, compile_only, target_dir, object_name, self.target_source_name, links, optimizations)
+        command = "%s %s -o %s%s %s%s %s %s" % (compiler, compile_only, target_dir, object_name, target_dir, self.target_source_name, links, optimizations)
         print(command)
         os.system(command)
+        CurrentProject.dependancy_stack.pop() # should be this
 
         #if not keep_source and self.target_type == ObjectType.Library:
         #    os.remove(self.target_source_name)
@@ -484,13 +535,49 @@ class Compiler:
             self.current_object.write_source("\n")
 
     def compile_link(self, link_node):
+        global CurrentProject, Parser, errors
         for link in link_node.children:
-            spoof = ObjectInfo(ObjectType.Library)
-            spoof.target_name = str(link)
-            spoof.update_names()
+            if link in CurrentProject.required_links_for_proc_main or link in CurrentProject.dependancy_stack:
+                spoof = ObjectInfo(ObjectType.Library)
+                spoof.target_name = str(link)
+                spoof.update_names()
 
-            self.current_object.target_link_objects.append(spoof.target_name)
-            self.current_object.write_pre_decl("#include \"%s\"\n" % spoof.target_header_name)
+                self.current_object.target_link_objects.append(spoof.target_name)
+                self.current_object.write_pre_decl("#include \"%s\"\n" % spoof.target_header_name)
+            else:
+                target_file = CurrentProject.search_file(link + ".cal")
+                if target_file == "":
+                    print("Link error on line %s, %s: Could not locate file '%s.cal' in provided search paths" % (link_node.meta.container_line, link_node.meta.container_column, link))
+                    raise FileNotFoundError
+
+                target_code = ""
+                with open(target_file, "r") as f:
+                    target_code = f.read()
+                _errors = errors
+                errors = 0
+                parsed = Parser.parse(target_code, on_error=parser_error)
+
+                if errors != 0:
+                    print("Error compiling %s, aborting due to %s errors" % (target_file, errors))
+
+                errors = _errors
+
+                library_compiler = Compiler()
+                library_compiler.compile(parsed)
+
+                for obj in library_compiler.objects:
+                    if not obj in self.objects:
+                        self.objects.append(obj)
+
+                    if not obj.target_name in CurrentProject.required_links_for_proc_main:
+                        CurrentProject.required_links_for_proc_main.append(obj.target_name)
+                        self.current_object.write_pre_decl("#include \"%s\"\n" % obj.target_header_name)
+
+                for key, fdef in library_compiler.function_infos.items():
+                    self.function_infos[key] = fdef
+                
+                pass
+
         
 
     def compile_c_include(self, c_include):
@@ -1410,7 +1497,7 @@ def init_project(name):
     os.mkdir("./projects/%s/bin" % name)
     os.mkdir("./projects/%s/src" % name)
     
-    update_project(name)
+    #update_project(name)
 
     with open("./projects/%s/src/core.cal" % name, "w") as f:
         f.write("lib %s_core {\n" % name)
@@ -1429,8 +1516,9 @@ def init_project(name):
         f.write("    }\n")
         f.write("}\n")
 
+
 def main():
-    global Grammar, errors, current_file
+    global Grammar, CurrentProject, errors, current_file, Parser
     code = ""
 
     #_t = sys.argv[0]
@@ -1466,31 +1554,19 @@ def main():
         update_project(name)
         return
     
-    files_to_compile = []
-    for root, dirs, files in os.walk("./projects/%s/src/" % name):
-        for file in files:
-            files_to_compile.append(os.path.join(root, file))
+    CurrentProject = ProjectInfo(name, "./projects/%s/" % name)
+    file = CurrentProject.get_main_file()
     
-    parser = Lark(Grammar, parser="lalr", maybe_placeholders=True, propagate_positions=True)
+    Parser = Lark(Grammar, parser="lalr", maybe_placeholders=True, propagate_positions=True)
 
-    objects_to_compile = []    
-    for file in files_to_compile:
-        with open(file, "r") as f:
-            code = f.read()
-        current_file = file
-        parsed = parser.parse(code, on_error=parser_error)
-
-        if parsed.data == "start":
-            for item in parsed.children:
-                objects_to_compile.append(item)
-        else:
-            objects_to_compile.append(parsed)
-    
+    with open(file, "r") as f:
+        code = f.read()
+    current_file = file
+    parsed = Parser.parse(code, on_error=parser_error)
 
     if errors == 0:
-        spoof = lark.tree.Tree("start", objects_to_compile)
         compiler = Compiler()
-        compiler.compile(spoof, keep_source=True)
+        compiler.compile(parsed, keep_source=True)
 
         for object in compiler.objects:
             if os.path.exists(object.target_source_name):
