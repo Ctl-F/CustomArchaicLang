@@ -1,0 +1,99 @@
+lib stdio {
+    c_include "stdio.h";
+
+    glob fn Print(.cstr string) {
+        $c{{ printf("%s", string); }};
+    }
+
+    glob fn Println(.cstr string){
+        $c{{ printf("%s\n", string); }};
+    }
+
+    glob fn PrintI32(.i32 val) {
+        $c{{ printf("%d", val); }};
+    }
+
+    glob fn PrintlnI32(.i32 val){
+        $c{{ printf("%d\n", val); }};
+    }
+
+    glob fn PrintI64(.i64 val) {
+        $c{{ printf("%ld", val); }};
+    }
+
+    glob fn PrintlnI64(.i64 val){
+        $c{{ printf("%ld\n", val); }};
+    }
+
+    glob fn PrintF32(.f32 val) {
+        $c{{ printf("%f", val); }};
+    }
+
+    glob fn PrintlnF32(.f32 val){
+        $c{{ printf("%f\n", val); }};
+    }
+
+    glob fn PrintF64(.f64 val) {
+        $c{{ printf("%lf", val); }};
+    }
+
+    glob fn PrintlnF64(.f64 val){
+        $c{{ printf("%lf\n", val); }};
+    }
+
+    errcodes ConsoleInputErrors { InsufficientBuffer, InvalidInput, NoInput }
+
+    glob fn Readln(.i8_ptr buffer, .i64 size) $result{.i64} {
+        stack .i64 read = 0;
+
+        if buffer == 0 || size == 0 {
+            return $err{ ConsoleInputErrors.InsufficientBuffer };
+        }
+
+        while 1 {
+            stack .i8 ch;
+            
+            _StdinGetCh() ? (.i8 c) {
+                ch = c;
+            }
+            catch (err){
+                if err == ConsoleInputErrors.NoInput {
+                    break;
+                }
+
+                return $err{ ConsoleInputErrors.InvalidInput };
+            };
+
+            if ch == '\n' {
+                break;
+            }
+
+            [buffer + read] = ch;
+            read++;
+
+            if read >= size {
+                return $err{ ConsoleInputErrors.InsufficientBuffer };
+            }
+        }
+
+        return $ok{read};
+    }
+
+    glob fn ReadCh() .i8 {
+        _StdinGetCh() ? (.i8 ok) { return ok; }
+        catch (err) { return 0; };
+    }
+
+    fn _StdinGetCh() $result{.i8} {
+        stack .i8 ch;
+
+        $c{{ ch = fgetc(stdin); }};
+
+        if ch == EOF {
+            return $err{ConsoleInputErrors.NoInput};
+        }
+
+        return $ok{ch};
+    }
+
+}

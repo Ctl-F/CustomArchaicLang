@@ -1,11 +1,20 @@
-proc Foo(entry: "main") {
+proc Foo {
     link stdio;
     link vector;
 
+    errcodes TestErrs{ FooError }
+
     static .cstr hello_message = "Hello World\n";    
+    static .cstr exit_message = "Exiting\n";
+
+    fn maybe_good() $result{void} {
+        return $ok{};
+        return $err{TestErrs.FooError};
+    }
 
     glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
         stdio.print_str(hello_message);
+        defer stdio.print_str(exit_message);
 
         stack .i32_ptr buffer = $buffer{ .i32, 10 };
         stack .i32 size = 10;
@@ -20,9 +29,11 @@ proc Foo(entry: "main") {
                 stdio.putch(',');
                 stdio.putch(' ');
             }
-        } 
+        }
         
         stdio.putch('\n');
+
+        maybe_good() ? {} catch(err){ stdio.print_str("Error occurred\n"); };
 
         stack $struct{vector.vec2} position;
         vector.vec2_set(@position, 11, 43);

@@ -252,6 +252,8 @@ class Compiler:
         self.current_error_struct_type = None
         self.function_infos = {}
         self.error_index_counter = 0
+        self.deferred_statements = []
+        self.objects = []
 
     def compile(self, tree, **kw_args):
         self.compilation_args = kw_args
@@ -275,10 +277,31 @@ class Compiler:
                 self.compile(item)
 
     def populate_function_infos(self, code_obj):
-        for item in code_obj.children:
-            if item.data != "function":
+        if code_obj.data == "begin_lib":
+            self.current_object = ObjectInfo(target_type=ObjectType.Library)
+        elif code_obj.data == "begin_proc":
+            self.current_object = ObjectInfo(target_type=ObjectType.Process)
+        elif code_obj.data == "begin_test":
+            pass
+        
+        self.current_object.target_name = str(code_obj.children[0])
+        self.current_object.update_names()
+        self.objects.append(self.current_object)
+
+        if self.current_object.target_type != ObjectType.Process:
+            self.current_object.write_header("#ifndef ", self.current_object.target_name, "_h\n#define ", self.current_object.target_name, "_h\n")
+            self.current_object.write_pre_decl("#include \"", self.current_object.target_header_name, "\"\n\n")
+
+        self.write_standard_headers()
+        self.write_standard_defs()
+
+        for item in code_obj.children[1].children:
+            try:
+                if item.data != "function":
+                    continue
+                self.get_function_info(item)
+            except:
                 continue
-            self.get_function_info(item)
     
     def get_function_info(self, func_node):
         cursor = 0
@@ -288,13 +311,57 @@ class Compiler:
             cursor += 1
         name = str(func_node.children[cursor])
         cursor += 1
+        params = self.get_params(func_node.children[cursor])
+        cursor += 1
 
+        return_type = "void"
+
+        if not (type(func_node.children[cursor]) is lark.tree.Tree):
+            if func_node.children[cursor].startswith("$result"):
+                return_type = str(func_node.children[cursor])
+            else:
+                return_type = self.get_c_type(str(func_node.children[cursor]))
+            cursor += 1
+        
+        err_union_name = None
+
+        if return_type.startswith("$result{"):
+            ok_type = return_type[8:-1]
+            if ok_type.find(".") <= 0:
+                ok_type = self.get_c_type(ok_type)
+            else:
+                ok_type = self.get_c_type("$struct{%s}" % ok_type)
+        
+            err_union_name = "_ERR_%s_OK_%s_TY" % (self.error_type_name, ok_type)
+
+            if not (err_union_name in self.error_structs):
+                self.generate_error_union(err_union_name, ok_type)
+
+            return_type = "struct %s" % err_union_name
+
+        glob_name = name
+        if is_global:
+            glob_name = "%s_%s" % (self.current_object.target_name, name)
+
+        function_info = {
+            "name": name,
+            "global_name": glob_name,
+            "params": params,
+            "return_type": return_type,
+            "is_global": is_global,
+            "throws_err": return_type == ("struct %s" % err_union_name),
+            "body_node": func_node.children[cursor]
+        }
+        self.function_infos[glob_name] = function_info
+        self.function_infos[name] = function_info
 
     def write_standard_headers(self):
-        self.current_object.write_pre_decl("\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n\n")
+        target = OutputTarget.PreDecl if self.current_object.target_type == ObjectType.Process else OutputTarget.Header
+        self.current_object.write(target, "\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n\n")
 
     def write_standard_defs(self):
-        self.current_object.write_header("#define %s %s\n" % (self.error_type_name, self.error_type))
+        target = OutputTarget.PreDecl if self.current_object.target_type == ObjectType.Process else OutputTarget.Header
+        self.current_object.write(target, "#define %s %s\n" % (self.error_type_name, self.error_type))
 
     def reset_counters(self):
         self.while_counter = 0
@@ -305,18 +372,19 @@ class Compiler:
     def compile_lib(self, lib_node):
         self.reset_counters()
 
-        self.current_object = ObjectInfo(target_type=ObjectType.Library)
-        self.current_object.target_name = str(lib_node.children[0])
-        self.current_object.update_names()
+        name = lib_node.children[0]
+
+        self.current_object = None
+        for obj in self.objects:
+            if obj.target_name == name:
+                self.current_object = obj
+                break
+        
+        if self.current_object == None:
+            print("Error compiling lib, object not found")
 
         obj_name = self.current_object.get_name()
         print("Compiling library: %s" % obj_name)
-
-        self.current_object.write_header("#ifndef ", obj_name, "_h\n#define ", obj_name, "_h\n")
-        self.current_object.write_pre_decl("#include \"", self.current_object.target_header_name, "\"\n\n")
-
-        self.write_standard_headers()
-        self.write_standard_defs()
 
         self.compile_code_unit(lib_node.children[1])
 
@@ -328,18 +396,30 @@ class Compiler:
     def compile_proc(self, proc_node):
         self.reset_counters()
 
-        self.current_object = ObjectInfo(target_type=ObjectType.Process)
-        self.current_object.target_name = str(proc_node.children[0])
-        self.current_object.update_names()
+        name = proc_node.children[0]
+
+        self.current_object = None
+        for obj in self.objects:
+            if obj.target_name == name:
+                self.current_object = obj
+                break
+        
+        for object in self.objects:
+            if object.target_type != ObjectType.Process:
+                for link in object.target_link_objects:
+                    self.current_object.target_link_objects.append(link)
+        
+
+        if self.current_object == None:
+            print("Error compiling lib, object not found")
 
         obj_name = self.current_object.get_name()
         print("Compiling process: %s" % obj_name)
 
-        #handle the key-value definitions in tye proc list
-        self.write_standard_headers()
-        self.write_standard_defs()
+        # self.write_standard_headers()
+        # self.write_standard_defs()
 
-        self.compile_code_unit(proc_node.children[2])
+        self.compile_code_unit(proc_node.children[1])
 
         self.current_object.export()
         self.current_object.compile(**self.compilation_args)
@@ -417,9 +497,18 @@ class Compiler:
         self.current_object.write_source("#include <", str(c_include.children[0])[1:-1], ">\n")
 
     def generate_error_union(self, struct_name, ok_type):
-        self.current_object.write_header("struct %s {\n" % struct_name)
-        self.current_object.write_header("    bool is_error;\n    union{\n")
-        self.current_object.write_header("    %s RESULT_ERROR;\n    %s RESULT_OK;\n    };\n};\n\n" % (self.error_type_name, ok_type))
+        target = OutputTarget.Header
+
+        if self.current_object.target_type == ObjectType.Process:
+            target = OutputTarget.PreDecl
+
+        self.current_object.write(target, "struct %s {\n" % struct_name)
+        self.current_object.write(target, "    bool is_error;\n    union{\n")
+
+        if ok_type == None or ok_type == "void":
+            self.current_object.write(target, "    %s RESULT_ERROR;\n    int RESULT_OK;\n    };\n};\n\n" % (self.error_type_name))
+        else:
+            self.current_object.write(target, "    %s RESULT_ERROR;\n    %s RESULT_OK;\n    };\n};\n\n" % (self.error_type_name, ok_type))
         self.error_structs[struct_name] = 1
 
     def compile_function(self, func_node):
@@ -429,78 +518,44 @@ class Compiler:
             is_global = True
             cursor += 1
         name = str(func_node.children[cursor])
-        cursor += 1
-        params = self.get_params(func_node.children[cursor])
 
-        cursor += 1
-
-        return_type = "void"
-
-        if not (type(func_node.children[cursor]) is lark.tree.Tree):
-            if func_node.children[cursor].startswith("$result"):
-                return_type = str(func_node.children[cursor])
-            else:
-                return_type = self.get_c_type(str(func_node.children[cursor]))
-            cursor += 1
-
-        if return_type.startswith("$result{"):
-            ok_type = return_type[8:-1]
-            if ok_type.find(".") <= 0:
-                ok_type = self.get_c_type(ok_type)
-            else:
-                ok_type = self.get_c_type("$struct{%s}" % ok_type)
-            
-            err_union_name = "_ERR_%s_OK_%s_TY" % (self.error_type_name, ok_type)
-
-            if not (err_union_name in self.error_structs):
-                self.generate_error_union(err_union_name, ok_type)
-
-            return_type = "struct %s" % err_union_name
-            self.current_error_struct_type = return_type
-
-        if is_global:
-            glob_name = "%s_%s" % (self.current_object.target_name, name)
-            self.current_object.target_exported_functions.append( { "name": glob_name, "params": params, "returns": return_type, "link": name })
+        if not name in self.function_infos:
+            print("Problem with function infos")
+            print("function %s not found" % name)
+            print("line: %s, %s" % (func_node.meta.container_line, func_node.meta.container_column))
+            raise NameError
         
+        func_info = self.function_infos[name]
+        is_global = func_info["is_global"]
+        global_name = func_info["global_name"]
+        params = func_info["params"]
+        return_type = func_info["return_type"]
+        body_node = func_info["body_node"]
+
+        self.deferred_statements = []
+
         self.current_object.target_functions.append({ "name": name, "params": params, "returns": return_type, "is_global": is_global })
 
-        if not is_global:
+        if is_global:
+            self.current_object.target_exported_functions.append( { "name": global_name, "params": params, "returns": return_type, "link": name })
+        else:
             self.current_object.write_source("static ")
-        self.current_object.write_source(return_type, " ", name)
-        self.current_object.write_source("(")
+
+        self.current_object.write_source(return_type, " ", name, "(")
 
         i = 0
-        for type_, name_ in params:
-            self.current_object.write_source(type_, " ", name_)
-            if i+1 < len(params):
+        for _ty, _name in params:
+            self.current_object.write_source(_ty, " ", _name)
+            if i + 1 < len(params):
                 self.current_object.write_source(", ")
-            else:
-                self.current_object.write_source(" ")
             i += 1
 
         self.current_object.write_source(")")
 
-        # function_info = {
-        #     "name": name,
-        #     "params": params,
-        #     "return_type": return_type,
-        #     "is_global": is_global,
-        #     "throws_err": self.current_error_struct_type != None
-        # }
-        # self.function_infos[name] = function_info
+        if func_info["throws_err"]:
+            self.current_error_struct_type = return_type
 
-        # if is_global:
-        #     glob_name = "%s_%s" % (self.current_object.target_name, name)
-        #     function_info = {
-        #         "name": glob_name,
-        #         "params": params,
-        #         "return_type": return_type,
-        #         "is_global": is_global,
-        #         "throws_err": self.current_error_struct_type != None
-        #     }
-        #     self.function_infos[glob_name] = function_info
-
-        self.compile_code_body(func_node.children[cursor])
+        self.compile_code_body(body_node)
 
         self.current_error_struct_type = None
 
@@ -610,21 +665,30 @@ class Compiler:
                     self.compile_do_while(item)
                 case "for_statement":
                     self.compile_for(item)
+                case "defer_statement":
+                    self.compile_defer(item)
 
         except AttributeError:
             print("Error on line %s, %s: Unexpected item %s" % (item.meta.container_line, item.meta.container_column, item))
 
+    def compile_defer(self, defer):
+        self.deferred_statements.append(defer.children[0])
+
     def compile_error_set(self, error_set):
         set_name = str(error_set.children[0])
+        target = OutputTarget.Header
 
-        self.current_object.write_header("///// BEGIN ERROR SET %s\n" % set_name)
+        if self.current_object.target_type == ObjectType.Process:
+            target = OutputTarget.PreDecl
+
+        self.current_object.write(target, "///// BEGIN ERROR SET %s\n" % set_name)
         for i in range(1, len(error_set.children)):
             err_code = error_set.children[i]
             err_name = "%s_%s" % (set_name, err_code)
-            self.current_object.write_header("#define %s %s\n" % (err_name, self.error_index_counter))
+            self.current_object.write(target, "#define %s %s\n" % (err_name, self.error_index_counter))
             self.error_index_counter += 1
 
-        self.current_object.write_header("///// END ERROR SET %s\n\n" % set_name)
+        self.current_object.write(target, "///// END ERROR SET %s\n\n" % set_name)
 
     def compile_try_statement(self, try_node):
         func_node = try_node.children[0]
@@ -649,15 +713,19 @@ class Compiler:
         self.current_object.write_source("if(!%s.is_error){\n" % result_name)
         cursor = 1
 
-        ok_type = self.get_c_type(str(try_node.children[cursor]))
-        cursor += 1
-        ok_name = str(try_node.children[cursor])
-        cursor += 1
+        if try_node.children[cursor] != None:
 
-        self.current_object.write_source("    %s %s = %s.RESULT_OK;\n" % (ok_type, ok_name, result_name))
-        
-        for i in range(cursor, len(try_node.children)-1):
-            self.compile_statement(try_node.children[i])
+            ok_type = self.get_c_type(str(try_node.children[cursor]))
+            cursor += 1
+            ok_name = str(try_node.children[cursor])
+            cursor += 1
+
+            self.current_object.write_source("    %s %s = %s.RESULT_OK;\n" % (ok_type, ok_name, result_name))
+            
+            for i in range(cursor, len(try_node.children)-1):
+                if try_node.children[i] == None:
+                    continue
+                self.compile_statement(try_node.children[i])
             
         self.current_object.write_source("    } else {\n    ")
         catch_node = try_node.children[-1]
@@ -675,9 +743,19 @@ class Compiler:
         for item in body_node.children:
             self.compile_statement(item)
 
+
+        self.expand_defers()
         self.current_object.write_source("}\n\n")
 
+    def expand_defers(self):
+        if len(self.deferred_statements) > 0:
+            defers = reversed(self.deferred_statements)
+            for defer in defers:
+                self.compile_statement(defer)
+
     def compile_return(self, return_node):
+        self.expand_defers()
+
         self.current_object.write_source("return ")
 
         if len(return_node.children) > 0:
@@ -787,7 +865,10 @@ class Compiler:
 
     def compile_ok_result(self, expr):
         self.current_object.write_source("(%s){ .is_error = 0, .RESULT_OK = " % self.current_error_struct_type)
-        self.compile_expression(expr.children[0])
+        if expr.children[0] != None:
+            self.compile_expression(expr.children[0])
+        else:
+            self.current_object.write_source("0")
         self.current_object.write_source("}")
 
     def compile_err_result(self, expr):
@@ -932,7 +1013,7 @@ class Compiler:
         pass
 
     def compile_func_call(self, node):
-        if node.children[1].children[-1] != None:
+        if len(node.children) > 1 and node.children[1].children[-1] != None:
             #variadic function call
             va_node = node.children[1].children[-1]
             pass # the current way that we planned for va_args
@@ -1296,37 +1377,126 @@ class Compiler:
     def compile_continue(self):
         self.current_object.write_source("continue;\n")
     
-    
 
-with open("grammar.lark", "r") as f:
+with open("./data/grammar.lark", "r") as f:
     Grammar = f.read()
 
 errors = 0
+current_file = ""
 def parser_error(e):
-    global errors
+    global errors, current_file
 
-    print("Error on line %s, col %s. Expected %s, got %s" % ( e.line, e.column, e.expected, e.token ))
+    print("%s) Error on line %s, col %s. Expected %s, got %s" % (current_file, e.line, e.column, e.expected, e.token ))
     errors += 1
     return True
 
+def print_help():
+    print("cal --help - prints help")
+    print("cal init [name] { flags } -> initializes project")
+    print("cal build [name] { flags } -> builds project")
+    print("flags:")
+    print("    -k  keep intermediate (.c/.h) files")
+    print("    -r  compile in release mode (optimizations)")
+
+def update_project(name):
+    import shutil
+
+    for root, dirs, files in os.walk("./libraries/"):
+        for file in files:
+            shutil.copy(os.path.join(root, file), os.path.join("./projects/%s/src" % name, file))
+
+def init_project(name):
+    os.mkdir("./projects/%s" % name)
+    os.mkdir("./projects/%s/bin" % name)
+    os.mkdir("./projects/%s/src" % name)
+    
+    update_project(name)
+
+    with open("./projects/%s/src/core.cal" % name, "w") as f:
+        f.write("lib %s_core {\n" % name)
+        f.write("    link stdio;\n\n")
+        f.write("    glob fn hello(){\n")
+        f.write("        stack .cstr message = \"Hello World\\n\";\n")
+        f.write("        stdio.Print(message);\n")
+        f.write("    }\n")
+        f.write("}\n")
+
+    with open("./projects/%s/src/main.cal" % name, "w") as f:
+        f.write("proc %s {\n" % name)
+        f.write("    link %s_core;\n\n" % name)
+        f.write("    glob fn main(.i32 argc, .ptr_ptr argv) .i32 {\n")
+        f.write("        %s_core.hello();\n" % name)
+        f.write("    }\n")
+        f.write("}\n")
+
 def main():
-    global Grammar, errors
+    global Grammar, errors, current_file
     code = ""
 
-    file = "example.cal"
-    if len(sys.argv) > 1:
-        file = sys.argv[1]
+    #_t = sys.argv[0]
+    #sys.argv = [_t, "build", "hello_world"]
 
-    with open(file, "r") as f:
-        code = f.read()
+    file = ""
+    if len(sys.argv) <= 1 or sys.argv[0] == "--help":
+        print_help()
+        return
 
+    command = sys.argv[1]
+
+    if len(sys.argv) < 3:
+        print("Please provide a project name")
+        return
+    
+    name = sys.argv[2]
+
+    flags = []
+
+    for i in range(3, len(sys.argv)):
+        flags.append(sys.argv[i])
+
+    if not command in [ "build", "init", "update" ]:
+        print("Unknown command %s" % command)
+        return
+    
+    if command == "init":
+        init_project(name)
+        return
+    
+    if command == "update":
+        update_project(name)
+        return
+    
+    files_to_compile = []
+    for root, dirs, files in os.walk("./projects/%s/src/" % name):
+        for file in files:
+            files_to_compile.append(os.path.join(root, file))
+    
     parser = Lark(Grammar, parser="lalr", maybe_placeholders=True, propagate_positions=True)
-    parsed = parser.parse(code, on_error=parser_error)
-    #print(parsed.pretty())
+
+    objects_to_compile = []    
+    for file in files_to_compile:
+        with open(file, "r") as f:
+            code = f.read()
+        current_file = file
+        parsed = parser.parse(code, on_error=parser_error)
+
+        if parsed.data == "start":
+            for item in parsed.children:
+                objects_to_compile.append(item)
+        else:
+            objects_to_compile.append(parsed)
+    
 
     if errors == 0:
+        spoof = lark.tree.Tree("start", objects_to_compile)
         compiler = Compiler()
-        compiler.compile(parsed, keep_source=True)
+        compiler.compile(spoof, keep_source=True)
+
+        for object in compiler.objects:
+            if os.path.exists(object.target_source_name):
+                os.remove(object.target_source_name)
+            if os.path.exists(object.target_header_name):
+                os.remove(object.target_header_name)
     else:
         print("Compilation aborted due to %s unresolved errors" % errors)
 
@@ -1348,8 +1518,9 @@ DONE*: Branching Statements (if, for, while, break, continue)
 DONE: Add Binary operators (both to the compiler + grammar)
 DONE: Structs (struct + $struct{name, member} macro)
 DONE: Allow raw_c_statement at top level
-DONE?: Error Unions and Handling
-TODO: Defer
+DONE: Error Unions and Handling
+DONE: Error Unions with Optional OK block
+DONE*: Defer
 TODO: Build System
 TODO: Testing framework
 TODO: Stdlib + Stdio + String + Math libraries
