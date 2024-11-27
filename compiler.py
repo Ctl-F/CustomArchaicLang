@@ -327,7 +327,7 @@ class Compiler:
 
         if return_type.startswith("$result{"):
             ok_type = return_type[8:-1]
-            if ok_type.find(".") <= 0:
+            if ok_type.find(".") == 0:
                 ok_type = self.get_c_type(ok_type)
             else:
                 ok_type = self.get_c_type("$struct{%s}" % ok_type)
@@ -1521,9 +1521,11 @@ DONE: Allow raw_c_statement at top level
 DONE: Error Unions and Handling
 DONE: Error Unions with Optional OK block
 DONE*: Defer
-TODO: Build System
-TODO: Testing framework
+DONE: Build System
+TODO: Link to C Libraries 
+TODO: $ifdebug{} else {} macro
 TODO: Stdlib + Stdio + String + Math libraries
+TODO: Testing framework
 TODO: Better Compiler Error Handling
 TODO: Switch/Match expression
 TODO*: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand

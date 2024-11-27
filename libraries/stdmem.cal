@@ -1,0 +1,157 @@
+lib stdmem {
+    c_include "stdlib.h";
+    errcodes MemoryError { OutOfMemory, NullPointer, InvalidPointerBounds }
+
+    static .ptr_ptr TrackedAllocations = 0;
+
+    glob fn AllocateBuffer(.i64 size) $result{.ptr} {
+        stack .ptr allocation = 0;
+
+        $c{{
+            allocation = malloc(size);
+        }};
+
+        if allocation == 0 {
+            return $err{ MemoryError.OutOfMemory };
+        }
+        return $ok{ allocation };
+    }
+
+    glob fn FreeBuffer(.ptr buffer) {
+        $c{{
+            free(buffer);
+        }};
+    }
+
+    glob fn IsEqual(.ptr a, .ptr b, .i64 count) $result{.i32} {
+        while(count > 0){
+            if [.i8_ptr a] != [.i8_ptr b] {
+                return 0;
+            }
+            a++;
+            b++;
+            count--;
+        }
+        return 1;
+    }
+
+    glob fn Copy(.ptr from_start, .ptr from_end, .ptr to_start) $result{void} {
+        if from_start == 0 || from_end == 0 || to_start == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end || (from_start <= to_start && to_start <= from_end) {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.i8_ptr to_start] = [.i8_ptr from_start];
+            from_start++;
+            to_start++; 
+        }
+
+        return $ok{};
+    }
+
+    glob fn Set(.ptr from_start, .ptr from_end, .i8 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.i8_ptr from_start] = value;
+            from_start++;
+        }
+
+        return $ok{};
+    }
+
+    glob fn SetI16(.ptr from_start, .ptr from_end, .i16 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.i16_ptr from_start] = value;
+            from_start += $sizeof(.i16);
+        }
+
+        return $ok{};
+    }
+
+    glob fn SetI32(.ptr from_start, .ptr from_end, .i32 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.i32_ptr from_start] = value;
+            from_start += $sizeof(.i32);
+        }
+
+        return $ok{};
+    }
+
+    glob fn SetI64(.ptr from_start, .ptr from_end, .i64 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.i64_ptr from_start] = value;
+            from_start += $sizeof(.i64);
+        }
+
+        return $ok{};
+    }
+
+    glob fn SetF32(.ptr from_start, .ptr from_end, .f32 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.f32_ptr from_start] = value;
+            from_start += $sizeof(.f32);
+        }
+
+        return $ok{};
+    }
+
+    glob fn SetF64(.ptr from_start, .ptr from_end, .f64 value) $result{void} {
+        if from_start == 0 || from_end == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
+        if from_start >= from_end {
+            return $err{ MemoryError.InvalidPointerBounds };
+        }
+
+        while from_start < from_end {
+            [.f64_ptr from_start] = value;
+            from_start += $sizeof(.f64);
+        }
+
+        return $ok{};
+    }
+}

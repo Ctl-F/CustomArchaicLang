@@ -1,3 +1,56 @@
 lib strings {
-    
+    link stdmem;
+
+    glob struct string {
+        .i64 length;
+        .cstr data;
+    }
+
+    glob fn NewString(.cstr data) $result{string} {
+        stack .i64 string_length;
+        stack $struct{string} new_string;
+        stack .ptr cursor = @new_string;
+
+        CLength(data) ? (.i64 len) {
+            string_length = len;
+        }
+        catch (err) {
+            return $err{err};
+        };
+
+        [.i64_ptr cursor + $offsetof{string, length}] = string_length;
+
+        stdmem.AllocateBuffer(string_length + 1) ? (.ptr ok) {
+            [.ptr_ptr cursor + $offsetof{string, data}] = ok;
+        }
+        catch (err) {
+            return $err{err};
+        };
+
+        stdmem.Copy(data, data+string_length, [.ptr_ptr cursor + $offsetof{string, data}]) ? { }
+        catch(err){
+            stdmem.FreeBuffer( [.ptr_ptr cursor + $offsetof{string, data}] );
+            return $err{err};
+        };
+
+        cursor = [.ptr_ptr cursor + $offsetof{string, data}];
+        [.cstr cursor + string_length] = 0;
+        return $ok{new_string};
+    }
+
+    glob fn CLength(.cstr str) $result{.i64} {
+        stack .i64 length = 0;
+
+        if str == 0 {
+            return ${ MemoryError.NullPointer };
+        }
+
+        while [str] != 0 {
+            length++;
+            str++;
+        }
+
+        return $ok{length}
+    }
+
 }
