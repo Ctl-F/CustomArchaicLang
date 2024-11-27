@@ -2,9 +2,7 @@ proc Foo(entry: "main") {
     link stdio;
     link vector;
 
-    static .cstr hello_message = "Hello World\n";
-
-    
+    static .cstr hello_message = "Hello World\n";    
 
     glob fn main(.i32 argc, .ptr_ptr argv) .i32 {
         stdio.print_str(hello_message);
@@ -69,7 +67,6 @@ lib vector {
 lib stdio {
     c_include "stdio.h";
 
-    
     glob fn print_str(.cstr ptr) {
         stack .cstr fmt = "%s";
         $c{{ printf(fmt, ptr); }};

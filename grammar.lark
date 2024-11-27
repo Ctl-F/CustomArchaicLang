@@ -13,6 +13,7 @@ static_array: "{" [value [("," value)+] ] "}"
 keyval_pair: NAME ":" value
 ?keyval_list: keyval_pair [("," keyval_pair)+]
 
+error_set: "errcodes" NAME "{" NAME [("," NAME)+] "}"
 
 param: TYPE NAME
 param_list: param [("," param)+] [("," VA_PARAMS)]
@@ -37,6 +38,7 @@ struct_member_offset: "$struct" "{" [NAME "."] NAME "," NAME "}"
 
 ?toplevel_stmt: link_stmt ";"
     | static_allocation ";"
+    | error_set
     | func_def
     | raw_c_statement
     | struct_def
@@ -126,9 +128,12 @@ expression: assignment
     | atom "--" -> post_dec
     | "++" atom -> pre_inc
     | "--" atom -> pre_dec
+    | "$ok{" [expression] "}" -> ok_result
+    | "$err{" NAME "." NAME "}" -> err_result
     | "(" expression ")" -> group
 
 ?statement: stack_allocation ";"
+    | try_statement ";"
     | expression ";"
     | if_statement
     | while_statement
@@ -137,6 +142,10 @@ expression: assignment
     | return_statement
     | loop_flow_stmt
     | raw_c_statement
+
+try_statement: func_call "?" "(" TYPE NAME ")" "{" statement* "}" catch_statement
+
+catch_statement: "catch" "(" NAME ")" "{" statement* "}"
 
 if_statement: "if" expression "{" statement* "}" else_branch*
 ?else_branch: "else" if_statement -> else_if
@@ -160,6 +169,8 @@ raw_c_statement: INLINE_C_BODY ";"
 
 TYPE: PRIMITIVE_TYPE
     | "$struct{" [NAME "."] NAME "}" 
+    | "$result{" PRIMITIVE_TYPE "}"
+    | "$result{" ([NAME "."] NAME) "}"
 
 PRIMITIVE_TYPE: ".cstr"
     | ".i32"
@@ -176,6 +187,7 @@ PRIMITIVE_TYPE: ".cstr"
     | ".f32_ptr"
     | ".f64_ptr"
     | ".ptr_ptr"
+    | ".err"
 
 CHAR: /'\\?.'/
 

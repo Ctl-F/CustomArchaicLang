@@ -245,9 +245,23 @@ class Compiler:
         self.while_counter = 0
         self.break_labels = [ None ]
         self.delta = 0
+        self.error_sets = {}
+        self.error_type = "int"
+        self.error_type_name = "CAL_ERR_TY"
+        self.error_structs = {}
+        self.current_error_struct_type = None
+        self.function_infos = {}
+        self.error_index_counter = 0
 
     def compile(self, tree, **kw_args):
         self.compilation_args = kw_args
+
+        if tree.data == "start":
+            ls = sorted(tree.children, key=sort_objects)
+            for item in ls:
+                self.populate_function_infos(item)
+        else:
+            self.populate_function_infos(tree)
 
         if tree.data == "begin_lib":
             self.compile_lib(tree)
@@ -260,13 +274,36 @@ class Compiler:
             for item in ls:
                 self.compile(item)
 
+    def populate_function_infos(self, code_obj):
+        for item in code_obj.children:
+            if item.data != "function":
+                continue
+            self.get_function_info(item)
+    
+    def get_function_info(self, func_node):
+        cursor = 0
+        is_global = False
+        if func_node.children[cursor] == "glob":
+            is_global = True
+            cursor += 1
+        name = str(func_node.children[cursor])
+        cursor += 1
+
+
     def write_standard_headers(self):
         self.current_object.write_pre_decl("\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n\n")
 
+    def write_standard_defs(self):
+        self.current_object.write_header("#define %s %s\n" % (self.error_type_name, self.error_type))
 
-    def compile_lib(self, lib_node):
+    def reset_counters(self):
         self.while_counter = 0
         self.for_counter = 0
+        self.error_index_counter = 0
+        self.delta = 0
+
+    def compile_lib(self, lib_node):
+        self.reset_counters()
 
         self.current_object = ObjectInfo(target_type=ObjectType.Library)
         self.current_object.target_name = str(lib_node.children[0])
@@ -279,6 +316,7 @@ class Compiler:
         self.current_object.write_pre_decl("#include \"", self.current_object.target_header_name, "\"\n\n")
 
         self.write_standard_headers()
+        self.write_standard_defs()
 
         self.compile_code_unit(lib_node.children[1])
 
@@ -288,8 +326,7 @@ class Compiler:
         print("done.")
 
     def compile_proc(self, proc_node):
-        self.while_counter = 0
-        self.for_counter = 0
+        self.reset_counters()
 
         self.current_object = ObjectInfo(target_type=ObjectType.Process)
         self.current_object.target_name = str(proc_node.children[0])
@@ -300,6 +337,7 @@ class Compiler:
 
         #handle the key-value definitions in tye proc list
         self.write_standard_headers()
+        self.write_standard_defs()
 
         self.compile_code_unit(proc_node.children[2])
 
@@ -333,7 +371,6 @@ class Compiler:
         if is_global:
             self.current_object.write_pre_decl("#define %s %s\n" % (name, visible_name))
 
-
     def compile_struct_member_macro(self, macro_node):
         name = str(macro_node.children[1])
         if macro_node.children[0] != None:
@@ -355,8 +392,12 @@ class Compiler:
                     self.compile_static_allocation(item)
                 case "link":
                     self.compile_link(item)
+                case "raw_c_statement":
+                    self.compile_inline_c(item)
                 case "struct_def":
                     self.compile_struct_def(item)
+                case "error_set":
+                    self.compile_error_set(item)
                 case _:
                     print("Error compiling code unit, unexpected item %s" % item)
 
@@ -375,6 +416,12 @@ class Compiler:
     def compile_c_include(self, c_include):
         self.current_object.write_source("#include <", str(c_include.children[0])[1:-1], ">\n")
 
+    def generate_error_union(self, struct_name, ok_type):
+        self.current_object.write_header("struct %s {\n" % struct_name)
+        self.current_object.write_header("    bool is_error;\n    union{\n")
+        self.current_object.write_header("    %s RESULT_ERROR;\n    %s RESULT_OK;\n    };\n};\n\n" % (self.error_type_name, ok_type))
+        self.error_structs[struct_name] = 1
+
     def compile_function(self, func_node):
         cursor = 0
         is_global = False
@@ -390,8 +437,26 @@ class Compiler:
         return_type = "void"
 
         if not (type(func_node.children[cursor]) is lark.tree.Tree):
-            return_type = self.get_c_type(str(func_node.children[cursor]))
+            if func_node.children[cursor].startswith("$result"):
+                return_type = str(func_node.children[cursor])
+            else:
+                return_type = self.get_c_type(str(func_node.children[cursor]))
             cursor += 1
+
+        if return_type.startswith("$result{"):
+            ok_type = return_type[8:-1]
+            if ok_type.find(".") <= 0:
+                ok_type = self.get_c_type(ok_type)
+            else:
+                ok_type = self.get_c_type("$struct{%s}" % ok_type)
+            
+            err_union_name = "_ERR_%s_OK_%s_TY" % (self.error_type_name, ok_type)
+
+            if not (err_union_name in self.error_structs):
+                self.generate_error_union(err_union_name, ok_type)
+
+            return_type = "struct %s" % err_union_name
+            self.current_error_struct_type = return_type
 
         if is_global:
             glob_name = "%s_%s" % (self.current_object.target_name, name)
@@ -405,8 +470,8 @@ class Compiler:
         self.current_object.write_source("(")
 
         i = 0
-        for type_, name in params:
-            self.current_object.write_source(type_, " ", name)
+        for type_, name_ in params:
+            self.current_object.write_source(type_, " ", name_)
             if i+1 < len(params):
                 self.current_object.write_source(", ")
             else:
@@ -415,15 +480,43 @@ class Compiler:
 
         self.current_object.write_source(")")
 
+        # function_info = {
+        #     "name": name,
+        #     "params": params,
+        #     "return_type": return_type,
+        #     "is_global": is_global,
+        #     "throws_err": self.current_error_struct_type != None
+        # }
+        # self.function_infos[name] = function_info
+
+        # if is_global:
+        #     glob_name = "%s_%s" % (self.current_object.target_name, name)
+        #     function_info = {
+        #         "name": glob_name,
+        #         "params": params,
+        #         "return_type": return_type,
+        #         "is_global": is_global,
+        #         "throws_err": self.current_error_struct_type != None
+        #     }
+        #     self.function_infos[glob_name] = function_info
+
         self.compile_code_body(func_node.children[cursor])
+
+        self.current_error_struct_type = None
 
     def get_c_type(self, type):
         if type.startswith("$struct{"):
-            type = type[8:-1]
-            type = type.strip()
+            type = type[8:-1].strip()
             type = type.replace(".", "_")
             return "struct %s" % type
 
+        """if type.starts_width("$result{"):
+            internal_type = type[8:-1].strip()
+            if internal_type.find(".") != -1:
+                internal_type = self.get_c_type("$struct{%s}" % internal_type)
+            else:
+                internal_type = self.get_c_type(internal_type)"""
+            
         match type:
             case ".i32":
                 return "int32_t"
@@ -461,6 +554,8 @@ class Compiler:
                 return "void"
             case ".ptr_ptr":
                 return "void**"
+            case ".err":
+                return self.error_type_name
             case _:
                 print("Unknown type %s" % type)
 
@@ -490,6 +585,8 @@ class Compiler:
             match item.data:
                 case "stack_allocation":
                     self.compile_stack_alloc(item)
+                case "try_statement":
+                    self.compile_try_statement(item)
                 case "raw_c_statement":
                     self.compile_inline_c(item)
                 case "return_statement":
@@ -515,7 +612,62 @@ class Compiler:
                     self.compile_for(item)
 
         except AttributeError:
-            print("Unexpected item %s" % item)
+            print("Error on line %s, %s: Unexpected item %s" % (item.meta.container_line, item.meta.container_column, item))
+
+    def compile_error_set(self, error_set):
+        set_name = str(error_set.children[0])
+
+        self.current_object.write_header("///// BEGIN ERROR SET %s\n" % set_name)
+        for i in range(1, len(error_set.children)):
+            err_code = error_set.children[i]
+            err_name = "%s_%s" % (set_name, err_code)
+            self.current_object.write_header("#define %s %s\n" % (err_name, self.error_index_counter))
+            self.error_index_counter += 1
+
+        self.current_object.write_header("///// END ERROR SET %s\n\n" % set_name)
+
+    def compile_try_statement(self, try_node):
+        func_node = try_node.children[0]
+        func_name = str(func_node.children[0].children[1])
+        if func_node.children[0].children[0] != None:
+            func_name = "%s_%s" % (func_node.children[0].children[0], func_name)
+        
+        if not func_name in self.function_infos:
+            print("Error on line %s, %s: Try statement was used on a function that does not return a result type" % (try_node.meta.container_line, try_node.meta.container_column))
+            raise LookupError
+
+        func_info = self.function_infos[func_name]
+
+        result_name = "_RESULT_%s" % self.delta
+        self.delta += 1
+
+        self.current_object.write_source("%s %s = " % (func_info["return_type"], result_name))
+
+        self.compile_expression(func_node)
+        self.current_object.write_source(";\n    ")
+
+        self.current_object.write_source("if(!%s.is_error){\n" % result_name)
+        cursor = 1
+
+        ok_type = self.get_c_type(str(try_node.children[cursor]))
+        cursor += 1
+        ok_name = str(try_node.children[cursor])
+        cursor += 1
+
+        self.current_object.write_source("    %s %s = %s.RESULT_OK;\n" % (ok_type, ok_name, result_name))
+        
+        for i in range(cursor, len(try_node.children)-1):
+            self.compile_statement(try_node.children[i])
+            
+        self.current_object.write_source("    } else {\n    ")
+        catch_node = try_node.children[-1]
+        self.current_object.write_source("%s %s = %s.RESULT_ERROR;\n" % (self.error_type_name, catch_node.children[0], result_name))
+
+        for i in range(1, len(catch_node.children)):
+            self.compile_statement(catch_node.children[i])
+
+        self.current_object.write_source("    } //END TRY/CATCH STMT\n")
+
 
     def compile_code_body(self, body_node):
         self.current_object.write_source("{\n")
@@ -621,13 +773,26 @@ class Compiler:
                 self.compile_struct_member_macro(expr)
             case "va_arg":
                 self.compile_va_arg(expr)
+            case "ok_result":
+                self.compile_ok_result(expr)
+            case "err_result":
+                self.compile_err_result(expr)
             case "argument_list":
-                idx = 0
-                for child in expr.children:
+                for idx in range(len(expr.children) - 1):
+                    child = expr.children[idx]
                     self.compile_expression(child)
-                    if idx+1 < len(expr.children):
+                    if idx+1 < len(expr.children) - 1:
                         self.current_object.write_source(", ")
-                    idx += 1
+                #compile va_args...
+
+    def compile_ok_result(self, expr):
+        self.current_object.write_source("(%s){ .is_error = 0, .RESULT_OK = " % self.current_error_struct_type)
+        self.compile_expression(expr.children[0])
+        self.current_object.write_source("}")
+
+    def compile_err_result(self, expr):
+        errcode_name = "%s_%s" % (expr.children[0], expr.children[1])
+        self.current_object.write_source("(%s){ .is_error = 1, .RESULT_ERROR = %s }" % (self.current_error_struct_type, errcode_name))
 
     def compile_plus_eq(self, node):
         self.compile_expression(node.children[0])
@@ -1148,14 +1313,14 @@ def main():
     global Grammar, errors
     code = ""
 
-    file = "./cal_examples/variable_args.cal"
+    file = "example.cal"
     if len(sys.argv) > 1:
         file = sys.argv[1]
 
     with open(file, "r") as f:
         code = f.read()
 
-    parser = Lark(Grammar, parser="lalr", maybe_placeholders=True)
+    parser = Lark(Grammar, parser="lalr", maybe_placeholders=True, propagate_positions=True)
     parsed = parser.parse(code, on_error=parser_error)
     #print(parsed.pretty())
 
@@ -1172,18 +1337,25 @@ if __name__ == "__main__":
 """
 Version 1.0
 ----------------------------
+DONE: Variables
+DONE: Function Creation
+DONE: Proc + Lib Creation
+DONE: Proc Linking
+DONE: Inline C
+DONE: Compile C Output
 DONE: Finish Expressions (reference, derefrence, dereference+func_call)
 DONE*: Branching Statements (if, for, while, break, continue)
 DONE: Add Binary operators (both to the compiler + grammar)
 DONE: Structs (struct + $struct{name, member} macro)
-TODO*: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
-TODO: Testing framework
+DONE: Allow raw_c_statement at top level
+DONE?: Error Unions and Handling
+TODO: Defer
 TODO: Build System
-TODO: Allow raw_c_statement at top level
+TODO: Testing framework
 TODO: Stdlib + Stdio + String + Math libraries
-TODO: Error Unions and Handling
 TODO: Better Compiler Error Handling
 TODO: Switch/Match expression
+TODO*: Add additional Macros (more refined macros) such as $sizeof $buffer $va_args $va_expand
 
 Version 2.0
 -----------------------------

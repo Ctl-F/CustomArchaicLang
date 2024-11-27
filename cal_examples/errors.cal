@@ -1,9 +1,9 @@
 lib ErrorExample {
-    glob ErrorSet{ UnknownError, OutOfBoundsError, InvalidInputError };
+    errcodes ExampleErrors { UnknownError, OutOfBoundsError, InvalidInputError }
 
     glob fn ThrowsError(.i32 input) $result{.i32} {
         if input < 10 {
-            return $err{ InvalidInputError };
+            return $err{ ExampleErrors.InvalidInputError };
         }
         return $ok{ input };
     }
@@ -19,15 +19,15 @@ lib ErrorExample {
         ThrowsError(bad_input) ? (.i32 ok_result) {
             result = ok_result;
         }
-        catch (.err error) {
-            if error == InvalidInputError {
+        catch (error) {
+            if error == ExampleErrors.InvalidInputError {
                 io.PrintStr(message);
             }
             else {
                 io.PrintStr(message2);
             }
             result = 10;
-        }
+        };
         
 
     }
