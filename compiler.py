@@ -592,6 +592,8 @@ class Compiler:
                     self.compile_inline_c(item)
                 case "struct_def":
                     continue
+                case "debug_if":
+                    self.compile_debug_if(item)
                 #    self.compile_struct_def(item)
                 case "error_set":
                     self.compile_error_set(item)
@@ -643,7 +645,7 @@ class Compiler:
                 #for key, err in self.error_sets.items():
                 #    library_compiler.error_sets[key] = err
 
-                library_compiler.compile(parsed)
+                library_compiler.compile(parsed, **self.compilation_args)
 
                 for obj in library_compiler.objects:
                     if not obj in self.objects:
@@ -804,6 +806,9 @@ class Compiler:
             case _:
                 print("Unknown type %s" % type)
 
+    def is_debug(self):
+        return (not "optimizations" in self.compilation_args) or (self.compilation_args["optimizations"] == OptimizationLevel.Debug)
+
     def get_params(self, params_list):
         params = []
 
@@ -843,6 +848,8 @@ class Compiler:
                     self.compile_if(item)
                 case "else_if":
                     self.compile_else_if(item)
+                case "debug_if":
+                    self.compile_debug_if(item)
                 case "else":
                     self.compile_else(item)
                 case "break":
@@ -1410,7 +1417,12 @@ class Compiler:
         self.compile_allocation(alloc_node, False)
 
     def compile_debug_if(self, node):
-        pass
+        if self.is_debug():
+            for i in range(len(node.children) - 1):
+                self.compile_statement(node.children[i])
+        elif node.children[-1] != None:
+            for child in node.children[-1].children:
+                self.compile_statement(child)
 
     def compile_allocation(self, alloc_node, is_static):
         c_type = self.get_c_type(str(alloc_node.children[0]))
@@ -1648,9 +1660,9 @@ def main():
     global Grammar, CurrentProject, errors, current_file, Parser
     code = ""
 
-    """print("overwriting args")
+    print("overwriting args")
     _t = sys.argv[0]
-    sys.argv = [_t, "run", "hello_world", "-k"]"""
+    sys.argv = [_t, "run", "hello_foo", "-k"]
 
     if not os.path.exists("./projects"):
         os.mkdir("projects")
@@ -1685,6 +1697,13 @@ def main():
         update_project(name)
         return
     
+    optimizations = OptimizationLevel.Debug
+
+    if "-r1" in flags:
+        optimizations = OptimizationLevel.LowOptimization
+    if "-r2" in flags:
+        optimizations = OptimizationLevel.HighOptimization
+
     CurrentProject = ProjectInfo(name, "./projects/%s/" % name)
     file = CurrentProject.get_main_file()
     
@@ -1701,7 +1720,7 @@ def main():
 
     if errors == 0:
         compiler = Compiler()
-        compiler.compile(parsed, keep_source="-k" in flags)
+        compiler.compile(parsed, keep_source="-k" in flags, optimizations=optimizations)
 
         if not ("-k" in flags):
             for object in compiler.objects:

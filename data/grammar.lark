@@ -42,8 +42,8 @@ struct_member_offset: "$struct" "{" NAME_CHAIN "," NAME "}"
     | error_set
     | func_def
     | raw_c_statement
-    | debug_if
     | struct_def
+    //| toplvl_debug_if
 
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
     | "c_include" STRING -> c_include
@@ -154,13 +154,15 @@ try_statement: func_call "?" ["(" TYPE NAME ")"] "{" statement* "}" catch_statem
 
 catch_statement: "catch" "(" NAME ")" "{" statement* "}"
 
-debug_if: "$if" "debug" "{" statement* "}" [ "else" "{" statement* "}" ]
+debug_if: "$if" "debug" "{" statement* "}" [ else ]
+toplvl_debug_if: "$if" "debug" "{" toplevel_stmt* "}" [ else_toplvl]
 
 if_statement: "if" expression "{" statement* "}" else_branch*
 ?else_branch: "else" if_statement -> else_if
     | else
 
 else: "else" "{" statement* "}"
+else_toplvl: "else" "{" toplevel_stmt* "}"
 
 
 ?loop_flow_stmt: "break" ";" -> break

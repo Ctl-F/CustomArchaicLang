@@ -52,7 +52,7 @@ lib strings {
         [.ptr_ptr str + $struct{string, data}] = 0;
     }
 
-    glob fn CharAt(.ptr str, .i64 index) $result{.i8} {
+    glob fn GetCharAt(.ptr str, .i64 index) $result{.i8} {
         if str == 0 {
             return $err{ stdmem.MemoryError.NullPointer };
         }
@@ -63,7 +63,24 @@ lib strings {
             return $err{ StringError.IndexOutOfBounds };
         }
 
-        return $ok{ [.cstr str + $struct{string, data} + index] };
+        stack .cstr data_ptr = [.cstr str + $struct{string, data} ];
+
+        return $ok{ [.i8_ptr data_ptr + index] };
+    }
+
+    glob fn SetCharAt(.ptr str, .i64 index, .i8 ch) $result{void} {
+        if str == 0 {
+            return $err{ stdmem.MemoryError.NullPointer };
+        }
+
+        if index < 0 || index >= length {
+            return $err{ StringError.IndexOutOfBounds };
+        }
+        
+        stack .cstr data_ptr = [.cstr str + $struct{string, data} ];
+        [.i8_ptr data_ptr + index] = ch;
+
+        return $ok{};
     }
 
     glob fn StrLenC(.cstr str) $result{.i64} {
