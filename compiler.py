@@ -1409,6 +1409,9 @@ class Compiler:
     def compile_stack_alloc(self, alloc_node):
         self.compile_allocation(alloc_node, False)
 
+    def compile_debug_if(self, node):
+        pass
+
     def compile_allocation(self, alloc_node, is_static):
         c_type = self.get_c_type(str(alloc_node.children[0]))
         c_name = str(alloc_node.children[1])

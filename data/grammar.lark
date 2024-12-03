@@ -42,6 +42,7 @@ struct_member_offset: "$struct" "{" NAME_CHAIN "," NAME "}"
     | error_set
     | func_def
     | raw_c_statement
+    | debug_if
     | struct_def
 
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
@@ -140,6 +141,7 @@ expression: assignment
     | try_statement ";"
     | "defer" (expression|try_statement) ";" -> defer_statement
     | if_statement
+    | debug_if
     | while_statement
     | do_while_statement ";"
     | for_statement
@@ -151,6 +153,8 @@ expression: assignment
 try_statement: func_call "?" ["(" TYPE NAME ")"] "{" statement* "}" catch_statement
 
 catch_statement: "catch" "(" NAME ")" "{" statement* "}"
+
+debug_if: "$if" "debug" "{" statement* "}" [ "else" "{" statement* "}" ]
 
 if_statement: "if" expression "{" statement* "}" else_branch*
 ?else_branch: "else" if_statement -> else_if
