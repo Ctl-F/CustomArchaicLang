@@ -33,7 +33,6 @@ unit_body: "{" toplevel_stmt* "}"
 
 struct_member: TYPE NAME ";"
 
-/// HERE
 struct_def: [GLOBAL] "struct" NAME "{" struct_member* "}"
 struct_member_offset: "$struct" "{" NAME_CHAIN "," NAME "}" 
 
@@ -62,7 +61,6 @@ GLOBAL: "glob"
     | struct_member_offset
 
 
-//// HERE
 macro_buffer: "$buffer" "{" TYPE "," NUMBER "}" -> macro_buffer_typed_alloc
     | "$buffer" "{" NAME_CHAIN "," NUMBER "}" -> macro_buffer_struct_alloc 
     | "$buffer" "{" NUMBER "}" -> macro_buffer_bytes_alloc
@@ -70,7 +68,6 @@ macro_buffer: "$buffer" "{" TYPE "," NUMBER "}" -> macro_buffer_typed_alloc
 static_offset: "+" (NUMBER | NAME | macro) -> static_plus
     | "-" (NUMBER | NAME | macro) -> static_minus
 
-//// HERE
 ?lvalue: NAME_CHAIN -> var
     | "[" [ TYPE ] NAME_CHAIN static_offset* "]" -> deref_var
     | "[" [ TYPE ] func_call static_offset* "]" -> deref_func_call
