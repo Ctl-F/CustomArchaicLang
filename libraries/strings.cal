@@ -6,43 +6,71 @@ lib strings {
         .cstr data;
     }
 
+    errcodes StringError { IndexOutOfBounds }
+
+    /// Creates an owned string pointer, in that it copies the 
     glob fn NewString(.cstr data) $result{string} {
         stack .i64 string_length;
         stack $struct{string} new_string;
-        stack .ptr cursor = @new_string;
+        stack .ptr cursor;
+        cursor = @new_string;
 
-        CLength(data) ? (.i64 len) {
+        StrLenC(data) ? (.i64 len) {
             string_length = len;
         }
         catch (err) {
             return $err{err};
         };
 
-        [.i64_ptr cursor + $offsetof{string, length}] = string_length;
+        [.i64_ptr cursor + $struct{string, length}] = string_length;
 
         stdmem.AllocateBuffer(string_length + 1) ? (.ptr ok) {
-            [.ptr_ptr cursor + $offsetof{string, data}] = ok;
+            [.ptr_ptr cursor + $struct{string, data}] = ok;
         }
         catch (err) {
             return $err{err};
         };
 
-        stdmem.Copy(data, data+string_length, [.ptr_ptr cursor + $offsetof{string, data}]) ? { }
+        stdmem.Copy(data, data+string_length, [.ptr_ptr cursor + $struct{string, data}]) ? { }
         catch(err){
-            stdmem.FreeBuffer( [.ptr_ptr cursor + $offsetof{string, data}] );
+            stdmem.FreeBuffer( [.ptr_ptr cursor + $struct{string, data}] );
             return $err{err};
         };
 
-        cursor = [.ptr_ptr cursor + $offsetof{string, data}];
+        cursor = [.ptr_ptr cursor + $struct{string, data}];
         [.cstr cursor + string_length] = 0;
         return $ok{new_string};
     }
 
-    glob fn CLength(.cstr str) $result{.i64} {
+    glob fn DeleteString(.ptr str) {
+        if str == 0 {
+            return;
+        }
+
+        [.i64_ptr str + $struct{string, length}] = 0;
+        stdmem.FreeBuffer( [.ptr_ptr str + $struct{string, data}] );
+        [.ptr_ptr str + $struct{string, data}] = 0;
+    }
+
+    glob fn CharAt(.ptr str, .i64 index) $result{.i8} {
+        if str == 0 {
+            return $err{ stdmem.MemoryError.NullPointer };
+        }
+
+        stack .i64 length;
+        length = [.i64_ptr str + $struct{string, length}];
+        if index < 0 || index >= length {
+            return $err{ StringError.IndexOutOfBounds };
+        }
+
+        return $ok{ [.cstr str + $struct{string, data} + index] };
+    }
+
+    glob fn StrLenC(.cstr str) $result{.i64} {
         stack .i64 length = 0;
 
         if str == 0 {
-            return ${ MemoryError.NullPointer };
+            return $err{ stdmem.MemoryError.NullPointer };
         }
 
         while [str] != 0 {
@@ -50,7 +78,7 @@ lib strings {
             str++;
         }
 
-        return $ok{length}
+        return $ok{length};
     }
 
 }

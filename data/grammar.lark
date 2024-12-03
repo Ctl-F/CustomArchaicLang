@@ -33,8 +33,9 @@ unit_body: "{" toplevel_stmt* "}"
 
 struct_member: TYPE NAME ";"
 
+/// HERE
 struct_def: [GLOBAL] "struct" NAME "{" struct_member* "}"
-struct_member_offset: "$struct" "{" [NAME "."] NAME "," NAME "}"
+struct_member_offset: "$struct" "{" NAME_CHAIN "," NAME "}" 
 
 ?toplevel_stmt: link_stmt ";"
     | static_allocation ";"
@@ -58,15 +59,18 @@ GLOBAL: "glob"
 ?macro: "$sizeof" "{" TYPE "}" -> macro_sizeof 
     | struct_member_offset
 
+
+//// HERE
 macro_buffer: "$buffer" "{" TYPE "," NUMBER "}" -> macro_buffer_typed_alloc
-    | "$buffer" "{" [ NAME "." ] NAME "," NUMBER "}" -> macro_buffer_struct_alloc
+    | "$buffer" "{" NAME_CHAIN "," NUMBER "}" -> macro_buffer_struct_alloc 
     | "$buffer" "{" NUMBER "}" -> macro_buffer_bytes_alloc
 
 static_offset: "+" (NUMBER | NAME | macro) -> static_plus
     | "-" (NUMBER | NAME | macro) -> static_minus
 
-?lvalue: [NAME "."] NAME -> var
-    | "[" [ TYPE ] [NAME "."] NAME static_offset* "]" -> deref_var
+//// HERE
+?lvalue: NAME_CHAIN -> var
+    | "[" [ TYPE ] NAME_CHAIN static_offset* "]" -> deref_var
     | "[" [ TYPE ] func_call static_offset* "]" -> deref_func_call
 
 expression: assignment
@@ -129,7 +133,7 @@ expression: assignment
     | "++" atom -> pre_inc
     | "--" atom -> pre_dec
     | "$ok{" [expression] "}" -> ok_result
-    | "$err{" NAME "." NAME "}" -> err_result
+    | "$err{" expression "}" -> err_result
     | "(" expression ")" -> group
 
 ?statement: stack_allocation ";"
@@ -164,14 +168,17 @@ while_statement: "while" expression "{" (statement)* "}" [else]
 do_while_statement: "do" "{" (statement)* "}" "while" expression
 for_statement: "for" "(" [expression] ";" expression ";" [expression] ")" "{" (statement)* "}" [else]
 
-INLINE_C_BODY: /\$c\{\{.*\}\}/
+INLINE_C_BODY: "$c" "{{" /(.|\n)*?/ "}}"
+// /\$c\{\{(\n|.)*\}\}/
+
+NAME_CHAIN: NAME ("." NAME)*
 
 raw_c_statement: INLINE_C_BODY ";"
 
 TYPE: PRIMITIVE_TYPE
-    | "$struct{" [NAME "."] NAME "}"
+    | "$struct{" NAME_CHAIN "}"
     | "$result{" PRIMITIVE_TYPE "}"
-    | "$result{" ([NAME "."] NAME) "}"
+    | "$result{" NAME_CHAIN "}"
 
 PRIMITIVE_TYPE: ".cstr"
     | ".i32"

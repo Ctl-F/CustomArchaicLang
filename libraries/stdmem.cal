@@ -24,15 +24,19 @@ lib stdmem {
     }
 
     glob fn IsEqual(.ptr a, .ptr b, .i64 count) $result{.i32} {
+        if a == 0 || b == 0 {
+            return $err{ MemoryError.NullPointer };
+        }
+
         while(count > 0){
             if [.i8_ptr a] != [.i8_ptr b] {
-                return 0;
+                return $ok{ 0 };
             }
             a++;
             b++;
             count--;
         }
-        return 1;
+        return $ok{ 1 };
     }
 
     glob fn Copy(.ptr from_start, .ptr from_end, .ptr to_start) $result{void} {
@@ -81,7 +85,7 @@ lib stdmem {
 
         while from_start < from_end {
             [.i16_ptr from_start] = value;
-            from_start += $sizeof(.i16);
+            from_start += $sizeof{.i16};
         }
 
         return $ok{};
@@ -98,7 +102,7 @@ lib stdmem {
 
         while from_start < from_end {
             [.i32_ptr from_start] = value;
-            from_start += $sizeof(.i32);
+            from_start += $sizeof{.i32};
         }
 
         return $ok{};
@@ -115,7 +119,7 @@ lib stdmem {
 
         while from_start < from_end {
             [.i64_ptr from_start] = value;
-            from_start += $sizeof(.i64);
+            from_start += $sizeof{.i64};
         }
 
         return $ok{};
@@ -132,7 +136,7 @@ lib stdmem {
 
         while from_start < from_end {
             [.f32_ptr from_start] = value;
-            from_start += $sizeof(.f32);
+            from_start += $sizeof{.f32};
         }
 
         return $ok{};
@@ -149,7 +153,7 @@ lib stdmem {
 
         while from_start < from_end {
             [.f64_ptr from_start] = value;
-            from_start += $sizeof(.f64);
+            from_start += $sizeof{.f64};
         }
 
         return $ok{};
