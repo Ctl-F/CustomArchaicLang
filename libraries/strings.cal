@@ -63,7 +63,8 @@ lib strings {
             return $err{ StringError.IndexOutOfBounds };
         }
 
-        stack .cstr data_ptr = [.cstr str + $struct{string, data} ];
+        stack .cstr data_ptr;
+        data_ptr = [.ptr_ptr str + $struct{string, data} ];
 
         return $ok{ [.i8_ptr data_ptr + index] };
     }
@@ -73,11 +74,15 @@ lib strings {
             return $err{ stdmem.MemoryError.NullPointer };
         }
 
+        stack .i64 length;
+        length = [.i64_ptr str + $struct{string, length}];
+
         if index < 0 || index >= length {
             return $err{ StringError.IndexOutOfBounds };
         }
         
-        stack .cstr data_ptr = [.cstr str + $struct{string, data} ];
+        stack .cstr data_ptr;
+        data_ptr = [.ptr_ptr str + $struct{string, data} ];
         [.i8_ptr data_ptr + index] = ch;
 
         return $ok{};

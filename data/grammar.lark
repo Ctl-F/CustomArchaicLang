@@ -39,14 +39,15 @@ struct_member_offset: "$struct" "{" NAME_CHAIN "," NAME "}"
 
 ?toplevel_stmt: link_stmt ";"
     | static_allocation ";"
-    | error_set
+    | error_set ";"?
     | func_def
     | raw_c_statement
     | struct_def
     //| toplvl_debug_if
 
 link_stmt: "link" NAME [ ("," NAME)+ ] -> link
-    | "c_include" STRING -> c_include
+    | "$include" STRING -> c_include
+    | "$libc" STRING -> c_lib
 
 func_def: GLOBAL? "fn" NAME "(" [param_list] ")" TYPE? func_body -> function
 func_body: "{" statement* "}" -> function_body
@@ -138,7 +139,7 @@ expression: assignment
     | "(" expression ")" -> group
 
 ?statement: stack_allocation ";"
-    | try_statement ";"
+    | try_statement ";"?
     | "defer" (expression|try_statement) ";" -> defer_statement
     | if_statement
     | debug_if
@@ -179,7 +180,7 @@ INLINE_C_BODY: "$c" "{{" /(.|\n)*?/ "}}"
 
 NAME_CHAIN: NAME ("." NAME)*
 
-raw_c_statement: INLINE_C_BODY ";"
+raw_c_statement: INLINE_C_BODY ";"?
 
 TYPE: PRIMITIVE_TYPE
     | "$struct{" NAME_CHAIN "}"

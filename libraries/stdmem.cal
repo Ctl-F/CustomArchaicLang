@@ -1,5 +1,5 @@
 lib stdmem {
-    c_include "stdlib.h";
+    $include "stdlib.h";
     errcodes MemoryError { OutOfMemory, NullPointer, InvalidPointerBounds }
 
     static .ptr_ptr TrackedAllocations = 0;

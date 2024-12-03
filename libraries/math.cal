@@ -1,3 +1,11 @@
 lib math {
-    
+    $include "math.h";
+    $libc "m";
+
+    glob fn SqrtF(.f32 value) .f32 {
+        $c{{
+            return sqrtf(value);
+        }}
+    }
+
 }

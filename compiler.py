@@ -29,6 +29,7 @@ class ProjectInfo:
     name: str = ""
     project_dir: str = ""
     output_dir: str = ""
+    lib_dir: str = ""
     flags: list = field(default_factory=lambda: [])
     search_paths: list = field(default_factory=lambda: [])
     required_links_for_proc_main: list = field(default_factory=lambda: [])
@@ -42,8 +43,10 @@ class ProjectInfo:
         self.dependancy_stack = []
 
         self.output_dir = "%s/bin/" % project_dir
+        self.lib_dir = "%s/clibs/" % project_dir
 
         self.search_paths.append(os.path.join(project_dir, "src/"))
+        self.search_paths.append(os.path.join(project_dir, "libs/"))
         self.search_paths.append(os.path.join(COMPILER_DIR, "libraries/"))
 
     def search_file(self, filename):
@@ -232,6 +235,7 @@ class ObjectInfo:
         optimizations = "-g"
         target_dir = "./bin/"
         keep_source = False
+        clibs = []
 
         if "compiler" in kwargs:
             compiler = kwargs["compiler"]
@@ -252,6 +256,9 @@ class ObjectInfo:
         if "keep_source" in kwargs:
             keep_source = kwargs["keep_source"]
 
+        if "clibs" in kwargs:
+            clibs = kwargs["clibs"]
+
         #if "target_dir" in kwargs:
         #    target_dir = kwargs["target_dir"]
         target_dir = CurrentProject.output_dir
@@ -270,9 +277,17 @@ class ObjectInfo:
         if self.target_type != ObjectType.Process:
             links = ""
 
+        libs = ""
+        if self.target_type == ObjectType.Process:
+            libs = "-L%s " % CurrentProject.lib_dir
+
+            for lib in clibs:
+                libs = "%s -l%s " % (libs, lib)
+            
+
         compile_only = "-c" if self.target_type == ObjectType.Library else ""
 
-        command = "%s %s -o %s%s %s%s %s %s" % (compiler, compile_only, target_dir, object_name, target_dir, self.target_source_name, links, optimizations)
+        command = "%s %s -o %s%s %s%s %s %s %s" % (compiler, compile_only, target_dir, object_name, target_dir, self.target_source_name, links, libs, optimizations)
         print(command)
         os.system(command)
         CurrentProject.dependancy_stack.pop() # should be this
@@ -311,6 +326,7 @@ class Compiler:
         self.error_index_counter = 0
         self.deferred_statements = []
         self.objects = []
+        self.c_libs = []
 
     def compile(self, tree, **kw_args):
         self.compilation_args = kw_args
@@ -479,7 +495,7 @@ class Compiler:
         self.compile_code_unit(lib_node.children[1])
 
         self.current_object.export()
-        self.current_object.compile(**self.compilation_args)
+        self.current_object.compile(clibs=self.c_libs, **self.compilation_args)
 
         print("done.")
 
@@ -512,7 +528,7 @@ class Compiler:
         self.compile_code_unit(proc_node.children[1])
 
         self.current_object.export()
-        self.current_object.compile(**self.compilation_args)
+        self.current_object.compile(clibs=self.c_libs, **self.compilation_args)
 
         print("done.")
 
@@ -557,31 +573,19 @@ class Compiler:
             self.current_object.write_pre_decl("#define %s %s\n" % (name, visible_name))"""
 
     def compile_name_chain(self, names):
-        
         return str(names).replace(".", "_")
 
     def compile_struct_member_macro(self, macro_node):
-        #name = str(macro_node.children[1])
-        #if macro_node.children[0] != None:
-        #    name = "%s_%s" % (macro_node.children[0], name)
-        
         name = self.compile_name_chain(macro_node.children[0])
         self.current_object.write_source("offsetof(struct %s, %s)" % (name, macro_node.children[1]))
 
-
     def compile_code_unit(self, unit_body):
-        #self.current_object.write_header("#include <stdint.h>\n")
-        #self.current_object.write_header("#include <stdbool.h>\n")
-
-        #for item in unit_body.children:
-        #    if item.data != "struct_def":
-        #        continue
-        #    self.compile_struct_def(item)
-
         for item in unit_body.children:
             match item.data:
                 case "c_include":
                     self.compile_c_include(item)
+                case "c_lib":
+                    self.compile_c_lib(item)
                 case "function":
                     self.compile_function(item)
                 case "static_allocation":
@@ -601,6 +605,10 @@ class Compiler:
                     print("Error compiling code unit, unexpected item %s" % item)
 
             self.current_object.write_source("\n")
+
+    def compile_c_lib(self, lib):
+        self.c_libs.append(str(lib.children[0]))
+
 
     def compile_link(self, link_node):
         global CurrentProject, Parser, errors, current_file
@@ -664,6 +672,9 @@ class Compiler:
 
                 for key, err in library_compiler.error_sets.items():
                     self.error_sets[key] = err
+
+                for lib in library_compiler.c_libs:
+                    self.c_libs.append(lib)
 
                 current_file = c_file
 
@@ -1634,6 +1645,8 @@ def init_project(name):
     os.mkdir("./projects/%s" % name)
     os.mkdir("./projects/%s/bin" % name)
     os.mkdir("./projects/%s/src" % name)
+    os.mkdir("./projects/%s/clibs" % name)
+    os.mkdir("./projects/%s/libs" % name)
     
     #update_project(name)
 
@@ -1660,9 +1673,9 @@ def main():
     global Grammar, CurrentProject, errors, current_file, Parser
     code = ""
 
-    print("overwriting args")
-    _t = sys.argv[0]
-    sys.argv = [_t, "run", "hello_foo", "-k"]
+    #print("overwriting args")
+    #_t = sys.argv[0]
+    #sys.argv = [_t, "build", "hello_world", "-k", "-r2"]
 
     if not os.path.exists("./projects"):
         os.mkdir("projects")
@@ -1701,7 +1714,7 @@ def main():
 
     if "-r1" in flags:
         optimizations = OptimizationLevel.LowOptimization
-    if "-r2" in flags:
+    elif "-r2" in flags:
         optimizations = OptimizationLevel.HighOptimization
 
     CurrentProject = ProjectInfo(name, "./projects/%s/" % name)
@@ -1720,7 +1733,7 @@ def main():
 
     if errors == 0:
         compiler = Compiler()
-        compiler.compile(parsed, keep_source="-k" in flags, optimizations=optimizations)
+        compiler.compile(parsed, keep_source="-k" in flags, optimization=optimizations)
 
         if not ("-k" in flags):
             for object in compiler.objects:
@@ -1763,8 +1776,8 @@ DONE: Error Unions and Handling
 DONE: Error Unions with Optional OK block
 DONE*: Defer
 DONE: Build System
-TODO: Link to C Libraries 
-TODO: $ifdebug{} else {} macro
+DONE: Link to C Libraries 
+DONE: $ifdebug{} else {} macro
 TODO: Stdlib + Stdio + String + Math libraries
 TODO: Testing framework
 TODO: Better Compiler Error Handling

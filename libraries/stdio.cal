@@ -1,5 +1,5 @@
 lib stdio {
-    c_include "stdio.h";
+    $include "stdio.h";
 
     glob fn Print(.cstr string) {
         $c{{ printf("%s", string); }};
