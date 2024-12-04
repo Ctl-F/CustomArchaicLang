@@ -1,106 +1,93 @@
 lib strings {
     link stdmem;
 
-    glob struct string {
-        .i64 length;
-        .cstr data;
+    glob struct StringView {
+        .cstr start;
+        .cstr end;
     }
 
     errcodes StringError { IndexOutOfBounds }
 
-    /// Creates an owned string pointer, in that it copies the 
-    glob fn NewString(.cstr data) $result{string} {
-        stack .i64 string_length;
-        stack $struct{string} new_string;
-        stack .ptr cursor;
-        cursor = @new_string;
-
-        StrLenC(data) ? (.i64 len) {
-            string_length = len;
-        }
-        catch (err) {
-            return $err{err};
-        };
-
-        [.i64_ptr cursor + $struct{string, length}] = string_length;
-
-        stdmem.AllocateBuffer(string_length + 1) ? (.ptr ok) {
-            [.ptr_ptr cursor + $struct{string, data}] = ok;
-        }
-        catch (err) {
-            return $err{err};
-        };
-
-        stdmem.Copy(data, data+string_length, [.ptr_ptr cursor + $struct{string, data}]) ? { }
-        catch(err){
-            stdmem.FreeBuffer( [.ptr_ptr cursor + $struct{string, data}] );
-            return $err{err};
-        };
-
-        cursor = [.ptr_ptr cursor + $struct{string, data}];
-        [.cstr cursor + string_length] = 0;
-        return $ok{new_string};
-    }
-
-    glob fn DeleteString(.ptr str) {
-        if str == 0 {
-            return;
-        }
-
-        [.i64_ptr str + $struct{string, length}] = 0;
-        stdmem.FreeBuffer( [.ptr_ptr str + $struct{string, data}] );
-        [.ptr_ptr str + $struct{string, data}] = 0;
-    }
-
-    glob fn GetCharAt(.ptr str, .i64 index) $result{.i8} {
-        if str == 0 {
+    glob fn Length(.cstr string) $result{ .i64 }{
+        if string == 0 {
             return $err{ stdmem.MemoryError.NullPointer };
         }
+        stack .i64 length = 0;
 
+        while [string] {
+            string++;
+            length++;
+        }
+        
+        return $ok{ length };
+    }
+
+    glob fn ViewLength(.ptr str) .i64 {
+        stack .cstr start;
+        stack .cstr end;
+        start = [.ptr_ptr str + $struct{StringView, start}];
+        end = [.ptr_ptr str + $struct{StringView, end}];
+
+        return end - start;
+    }
+
+    glob fn CharAt(.cstr string, .i64 index) $result{ .i8 } {
+        if string == 0 {
+            return $err{ stdmem.MemoryError.NullPointer };
+        }
         stack .i64 length;
-        length = [.i64_ptr str + $struct{string, length}];
+
+        Length(string) ? (.i64 len){
+            length = len;
+        }
+        catch(err) {
+            return $err{err};
+        }
+
         if index < 0 || index >= length {
             return $err{ StringError.IndexOutOfBounds };
         }
 
-        stack .cstr data_ptr;
-        data_ptr = [.ptr_ptr str + $struct{string, data} ];
-
-        return $ok{ [.i8_ptr data_ptr + index] };
+        return $ok{ [string + index] };
     }
 
-    glob fn SetCharAt(.ptr str, .i64 index, .i8 ch) $result{void} {
-        if str == 0 {
+    glob fn ViewCharAt(.ptr view, .i64 index) $result{.i8} {
+        if view == 0 {
             return $err{ stdmem.MemoryError.NullPointer };
         }
-
         stack .i64 length;
-        length = [.i64_ptr str + $struct{string, length}];
+
+        length = ViewLength(view);
 
         if index < 0 || index >= length {
             return $err{ StringError.IndexOutOfBounds };
         }
         
-        stack .cstr data_ptr;
-        data_ptr = [.ptr_ptr str + $struct{string, data} ];
-        [.i8_ptr data_ptr + index] = ch;
+        stack .cstr begin;
+        begin = [.ptr_ptr view + $struct{StringView, start}];
 
-        return $ok{};
+        return [ begin + index ];
     }
 
-    glob fn StrLenC(.cstr str) $result{.i64} {
-        stack .i64 length = 0;
+    glob fn ToView(.cstr string) $struct{StringView} {
+        stack $struct{StringView} view;
+        stack .ptr addr;
+        addr = @view;
 
-        if str == 0 {
-            return $err{ stdmem.MemoryError.NullPointer };
+        [.ptr_ptr addr + $struct{StringView, start}] = string;
+
+        Length(string) ? (.i64 len) {
+            [.ptr_ptr addr + $struct{StringView, end}] = string + len;
+        }
+        catch(err){
+            [.ptr_ptr addr + $struct{StringView, end}] = string;
         }
 
-        while [str] != 0 {
-            length++;
-            str++;
-        }
+        return view;
+    }
 
-        return $ok{length};
+    glob fn Substr(.cstr string, .i64 start, .i64 count) $result{ StringView }{
+
     }
 
 }
